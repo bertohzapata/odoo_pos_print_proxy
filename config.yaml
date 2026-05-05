@@ -1,0 +1,26 @@
+# =============================================================================
+# POS Print Proxy - Configuracion por tienda
+# =============================================================================
+# Editar este archivo segun la tienda donde se instale.
+
+# Dominio de Odoo permitido (CORS). Solo este dominio puede enviar impresiones.
+# IMPORTANTE: debe ser EXACTAMENTE igual a lo que aparece en la barra del navegador
+# (con https://, sin barra final, sin path).
+odoo_domain: "https://tudominio.com"
+
+# Puerto donde escucha el proxy en esta PC
+port: 8072
+
+# Nombre de la impresora en Windows (tal como aparece en "Dispositivos e Impresoras")
+# Para ver los nombres disponibles, ejecutar: python -c "import win32print; print([p[2] for p in win32print.EnumPrinters(2)])"
+printer_name: "POS-80"
+
+# Ancho del papel en pixeles (80mm = 576px para 203dpi, 58mm = 384px)
+paper_width: 576
+
+# --- Impresora de cocina separada (opcional) ---
+# Descomentar si esta tienda tiene una segunda impresora fisica para cocina.
+# En Odoo, configurar la impresora de cocina con localhost:8073
+#
+# kitchen_printer_name: "KITCHEN-80"
+# kitchen_port: 8073

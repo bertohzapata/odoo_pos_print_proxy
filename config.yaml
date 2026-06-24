@@ -18,6 +18,10 @@ printer_name: "POS-80"
 # Ancho del papel en pixeles (80mm = 576px para 203dpi, 58mm = 384px)
 paper_width: 576
 
+# Logs detallados. false = solo eventos importantes (conexion, impresion, errores).
+# true = muestra cada keep-alive status (util solo para depurar problemas).
+verbose: false
+
 # --- Impresora de cocina separada (opcional) ---
 # Descomentar si esta tienda tiene una segunda impresora fisica para cocina.
 # En Odoo, configurar la impresora de cocina con localhost:8073

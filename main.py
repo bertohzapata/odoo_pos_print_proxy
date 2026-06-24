@@ -7,9 +7,13 @@ Ejecutar:
     python main.py
 """
 
+import asyncio
 import base64
 import logging
+import socket
+import ssl
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import yaml
@@ -33,53 +37,68 @@ ODOO_DOMAIN = config.get("odoo_domain", "https://tudominio.com")
 PORT = config.get("port", 8072)
 PRINTER_NAME = config.get("printer_name", "POS-80")
 PAPER_WIDTH = config.get("paper_width", 576)
+# verbose=True muestra cada status_json (util para depurar). Por defecto false
+# para que el log solo muestre eventos relevantes (conexion, impresion, errores).
+VERBOSE = bool(config.get("verbose", False))
 
 # --- SSL/TLS ---
 # Si existen los certificados generados por setup_https.bat (mkcert), el proxy
-# arranca en HTTPS. Esto es OBLIGATORIO cuando Odoo se sirve por HTTPS, porque
-# los navegadores bloquean por "Mixed Content" si una pagina HTTPS intenta
-# hablar con un servicio HTTP local.
+# arranca en HTTPS. Obligatorio cuando Odoo se sirve por HTTPS (mixed content).
 SSL_CERT = Path(__file__).parent / "localhost.pem"
 SSL_KEY = Path(__file__).parent / "localhost-key.pem"
 HAS_SSL = SSL_CERT.exists() and SSL_KEY.exists()
 
 # --- Logging ---
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG if VERBOSE else logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("pos_print_proxy")
 
-
-# Silenciar el ruido de ConnectionResetError [WinError 10054] que asyncio en
-# Windows produce cuando Chrome cierra conexiones HTTPS keep-alive de forma
-# abrupta. La respuesta HTTP ya fue entregada correctamente antes del cleanup,
-# asi que es solo ruido en el log, sin impacto funcional.
-class _SilenceConnectionResetFilter(logging.Filter):
-    def filter(self, record):
-        if record.exc_info and record.exc_info[0] is ConnectionResetError:
-            return False
-        msg = record.getMessage()
-        if "ConnectionResetError" in msg or "WinError 10054" in msg:
-            return False
-        return True
+# Silenciar el ruido de uvicorn (access logs y reportes de bajo nivel).
+logging.getLogger("uvicorn.access").disabled = True
+logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
+# El logger de asyncio es de donde salen los ConnectionResetError: subimos su
+# umbral a CRITICAL para que ni siquiera intente formatearlos. La supresion
+# real ocurre en el exception handler del loop (ver lifespan mas abajo).
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 
-logging.getLogger("asyncio").addFilter(_SilenceConnectionResetFilter())
+# --- Estado de conexion (para loggear "POS conectado" una sola vez) ---
+class _State:
+    pos_connected = False
+
+
+STATE = _State()
+
+
+# --- Supresion en la fuente del ConnectionResetError [WinError 10054] ---
+#
+# En Windows, cuando el navegador cierra una conexion HTTPS keep-alive de forma
+# abrupta (RST en vez de FIN), el ProactorEventLoop intenta socket.shutdown()
+# sobre un socket ya cerrado y lanza ConnectionResetError. La respuesta HTTP ya
+# fue entregada correctamente; es solo ruido del cleanup. Lo interceptamos en
+# el exception handler del loop, que es el unico punto fiable para silenciarlo.
+def _quiet_exception_handler(loop, context):
+    exc = context.get("exception")
+    if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+        return  # ignorar: el cliente cerro la conexion, no es un error real
+    loop.default_exception_handler(context)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    loop = asyncio.get_running_loop()
+    loop.set_exception_handler(_quiet_exception_handler)
+    yield
+
 
 # --- FastAPI app ---
-app = FastAPI(title="POS Print Proxy", version="1.2.0")
+app = FastAPI(title="POS Print Proxy", version="1.3.0", lifespan=lifespan)
 
 
 # --- Custom CORS + Private Network Access middleware ---
-#
-# Chrome/Edge implementan Private Network Access (PNA): cuando una pagina
-# publica intenta acceder a un servicio en red privada/loopback, el navegador
-# envia un preflight OPTIONS con `Access-Control-Request-Private-Network: true`
-# y exige `Access-Control-Allow-Private-Network: true` en la respuesta.
-# El CORSMiddleware estandar de FastAPI no incluye este header.
-
 ALLOWED_ORIGIN = ODOO_DOMAIN.rstrip("/")  # normalizar (sin barra final)
 
 
@@ -102,7 +121,10 @@ async def pna_cors_middleware(request: Request, call_next):
                     "Vary": "Origin",
                 },
             )
-        logger.warning(f"OPTIONS preflight rechazado de origen no permitido: {origin!r}")
+        # Solo advertir si hay un origen presente y distinto (no para peticiones
+        # locales directas sin Origin, como abrir la URL en el navegador).
+        if origin:
+            logger.warning(f"Origen no permitido (revisar odoo_domain): {origin!r}")
         return Response(status_code=403)
 
     response = await call_next(request)
@@ -142,15 +164,21 @@ async def status_json_get():
 
 @app.post("/hw_proxy/status_json")
 async def status_json_post(request: Request):
-    """Status check via JSON-RPC POST. POS lo llama cada 5s para mantener viva la conexion."""
+    """Keep-alive: el POS lo llama cada 5s. Solo se loggea en modo verbose."""
+    if not STATE.pos_connected:
+        STATE.pos_connected = True
+        logger.info("POS conectado (keep-alive activo)")
+    if VERBOSE:
+        logger.debug("status_json")
     body = await request.json()
     request_id = body.get("id")
-    drivers = {"printer": {"status": "connected"}}
-    return jsonrpc_response(drivers, request_id)
+    return jsonrpc_response({"printer": {"status": "connected"}}, request_id)
 
 
 @app.post("/hw_proxy/handshake")
 async def handshake(request: Request):
+    logger.info("POS conectado (handshake OK)")
+    STATE.pos_connected = True
     body = await request.json()
     request_id = body.get("id")
     return jsonrpc_response(True, request_id)
@@ -182,13 +210,13 @@ async def printer_action(request: Request):
                 return jsonrpc_response(False, request_id)
 
             image_bytes = base64.b64decode(receipt_b64)
-            logger.info(f"Recibido trabajo de impresion ({len(image_bytes)} bytes)")
-
             print_image_win32(image_bytes, PRINTER_NAME, PAPER_WIDTH)
+            logger.info(f"Impreso en '{PRINTER_NAME}' ({len(image_bytes)} bytes)")
             return jsonrpc_response(True, request_id)
 
         elif action == "cashbox":
             open_cashbox_win32(PRINTER_NAME)
+            logger.info(f"Cajon abierto en '{PRINTER_NAME}'")
             return jsonrpc_response(True, request_id)
 
         else:
@@ -196,11 +224,11 @@ async def printer_action(request: Request):
             return jsonrpc_response(False, request_id)
 
     except Exception as e:
-        logger.error(f"Error al imprimir: {e}")
+        logger.error(f"ERROR al imprimir en '{PRINTER_NAME}': {e}")
         return jsonrpc_response(False, request_id)
 
 
-# --- Utility endpoint (no es parte del protocolo IoT, solo para debug) ---
+# --- Utility endpoint (debug) ---
 
 @app.get("/printers")
 async def get_printers():
@@ -212,16 +240,36 @@ async def get_printers():
         return {"error": str(e)}
 
 
+# --- Self-test de arranque ---
+
+def _self_test_cert():
+    """Verifica que el certificado HTTPS sea cargable. Ayuda a diagnosticar."""
+    if not HAS_SSL:
+        return
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=str(SSL_CERT), keyfile=str(SSL_KEY))
+    except Exception as e:
+        logger.error(f"  ATENCION: el certificado HTTPS existe pero NO es valido: {e}")
+        logger.error("  Vuelve a ejecutar setup_https.bat como administrador.")
+
+
 # --- Main ---
 
 if __name__ == "__main__":
     import uvicorn
 
+    # En Windows, usar SelectorEventLoop en lugar del Proactor por defecto.
+    # El Proactor es el que genera los ConnectionResetError al cerrar conexiones
+    # HTTPS. Para un proxy de impresion (I/O ligero) el Selector es mas estable.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     protocol = "https" if HAS_SSL else "http"
 
     logger.info("=" * 60)
-    logger.info("POS Print Proxy v1.2 (HTTPS local + PNA)")
-    logger.info(f"  Modo: {'HTTPS (recomendado)' if HAS_SSL else 'HTTP (legacy - puede fallar con Odoo HTTPS)'}")
+    logger.info("POS Print Proxy v1.3")
+    logger.info(f"  Modo: {'HTTPS (correcto)' if HAS_SSL else 'HTTP (INCORRECTO si Odoo es HTTPS)'}")
     logger.info(f"  Dominio Odoo permitido: {ALLOWED_ORIGIN}")
     logger.info(f"  Puerto: {PORT}")
     logger.info(f"  Impresora: {PRINTER_NAME}")
@@ -231,21 +279,28 @@ if __name__ == "__main__":
     if not HAS_SSL:
         logger.warning("")
         logger.warning("  >>> NO HAY CERTIFICADOS HTTPS <<<")
-        logger.warning("  Si Odoo se sirve por HTTPS, el navegador bloqueara las peticiones")
-        logger.warning("  por 'Mixed Content'. Para activar HTTPS local:")
-        logger.warning("  1. Click derecho en setup_https.bat > Ejecutar como administrador")
-        logger.warning("  2. Reiniciar este proxy")
+        logger.warning("  Si Odoo se sirve por HTTPS, el navegador bloqueara las peticiones.")
+        logger.warning("  Solucion: click derecho en setup_https.bat > Ejecutar como administrador")
         logger.warning("")
+    else:
+        _self_test_cert()
 
     try:
         printers = list_printers()
-        logger.info(f"  Impresoras disponibles: {printers}")
+        logger.info(f"  Impresoras detectadas: {printers}")
         if PRINTER_NAME not in printers:
             logger.warning(
-                f"  ATENCION: '{PRINTER_NAME}' no encontrada. Disponibles: {printers}"
+                f"  ATENCION: '{PRINTER_NAME}' NO esta en la lista. "
+                f"Revisa printer_name en config.yaml."
             )
     except Exception:
         logger.warning("  No se pudo listar impresoras (win32print no disponible)")
+
+    # Hostname de la PC (ayuda a confirmar en que equipo corre)
+    try:
+        logger.info(f"  Equipo: {socket.gethostname()}")
+    except Exception:
+        pass
 
     logger.info("")
     logger.info(f"Proxy listo en {protocol}://localhost:{PORT}")
@@ -253,12 +308,17 @@ if __name__ == "__main__":
     logger.info("")
 
     uvicorn_kwargs = {
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": PORT,
         "log_level": "warning",
+        "access_log": False,
+        "loop": "asyncio",
     }
     if HAS_SSL:
         uvicorn_kwargs["ssl_certfile"] = str(SSL_CERT)
         uvicorn_kwargs["ssl_keyfile"] = str(SSL_KEY)
 
-    uvicorn.run(app, **uvicorn_kwargs)
+    try:
+        uvicorn.run(app, **uvicorn_kwargs)
+    except KeyboardInterrupt:
+        logger.info("Proxy detenido.")

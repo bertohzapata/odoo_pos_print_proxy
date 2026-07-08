@@ -93,25 +93,41 @@ Filename: "{app}\{#AppExeName}"; Description: "Iniciar POS Print Proxy ahora"; F
 
 
 [Code]
-// Detectar version instalada previa (por AppId) y desinstalarla silenciosamente
+
+function RemoveQuotes(S: String): String;
+begin
+  if (Length(S) > 1) and (S[1] = '"') and (S[Length(S)] = '"') then
+    Result := Copy(S, 2, Length(S) - 2)
+  else
+    Result := S;
+end;
+
+// Detectar version instalada previa (por AppId) y desinstalarla silenciosamente.
+// Se declara despues de RemoveQuotes para no depender de forward declaration.
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
   UninstallString: String;
+  CRLF: String;
+  Prompt: String;
 begin
   Result := True;
+  CRLF := Chr(13) + Chr(10);
+
   if RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#AppId}_is1',
     'UninstallString', UninstallString) or
      RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#AppId}_is1',
     'UninstallString', UninstallString) then
   begin
-    // Quitar comillas y agregar /VERYSILENT
     UninstallString := RemoveQuotes(UninstallString);
-    if MsgBox('Ya hay una version de POS Print Proxy instalada. ' +
-             'Se desinstalara automaticamente antes de continuar. ' +
-             'Los certificados HTTPS y la configuracion se conservaran. ' +
-             #13#10#13#10 +
-             '¿Continuar?', mbConfirmation, MB_YESNO) = IDYES then
+
+    Prompt := 'Ya hay una version de POS Print Proxy instalada. ' +
+              'Se desinstalara automaticamente antes de continuar. ' +
+              'Los certificados HTTPS y la configuracion se conservaran.' +
+              CRLF + CRLF +
+              'Continuar?';
+
+    if MsgBox(Prompt, mbConfirmation, MB_YESNO) = IDYES then
     begin
       Exec(UninstallString, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART',
            '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
@@ -121,12 +137,4 @@ begin
       Result := False;
     end;
   end;
-end;
-
-function RemoveQuotes(S: String): String;
-begin
-  if (Length(S) > 1) and (S[1] = '"') and (S[Length(S)] = '"') then
-    Result := Copy(S, 2, Length(S) - 2)
-  else
-    Result := S;
 end;

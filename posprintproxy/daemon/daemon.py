@@ -52,6 +52,15 @@ class DaemonSnapshot:
 # Utilidades de arranque
 # ============================================================================
 
+# En PyInstaller --windowed, cualquier subprocess.run sin este flag mostraria
+# una ventana CMD parpadeando en la barra de tareas. CREATE_NO_WINDOW la oculta.
+if sys.platform == "win32":
+    _CREATE_NO_WINDOW = 0x08000000
+    _WIN_SUBPROC = {"creationflags": _CREATE_NO_WINDOW}
+else:
+    _WIN_SUBPROC = {}
+
+
 def kill_zombies_on_port(port: int) -> list[int]:
     """
     Mata cualquier proceso que este escuchando en el puerto dado.
@@ -60,11 +69,17 @@ def kill_zombies_on_port(port: int) -> list[int]:
     if sys.platform != "win32":
         return []
 
+    # netstat con muchas conexiones puede tardar 8-12s en algunos Windows;
+    # 30s da margen suficiente sin bloquear la GUI (corre en thread worker).
     try:
         result = subprocess.run(
             ["netstat", "-ano"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=30,
+            **_WIN_SUBPROC,
         )
+    except subprocess.TimeoutExpired:
+        logger.warning(f"netstat tardo mas de 30s verificando puerto {port}; se salta la limpieza de zombies")
+        return []
     except Exception as e:
         logger.warning(f"No se pudo ejecutar netstat para verificar puerto {port}: {e}")
         return []
@@ -78,12 +93,16 @@ def kill_zombies_on_port(port: int) -> list[int]:
 
     killed = []
     for pid in pids:
-        r = subprocess.run(
-            ["taskkill", "/F", "/PID", pid],
-            capture_output=True,
-        )
-        if r.returncode == 0:
-            killed.append(int(pid))
+        try:
+            r = subprocess.run(
+                ["taskkill", "/F", "/PID", pid],
+                capture_output=True, timeout=5,
+                **_WIN_SUBPROC,
+            )
+            if r.returncode == 0:
+                killed.append(int(pid))
+        except Exception as e:
+            logger.warning(f"No se pudo matar PID {pid}: {e}")
 
     if killed:
         time.sleep(2)  # dar tiempo al SO a liberar el socket
@@ -148,7 +167,7 @@ class ProxyDaemon:
         return self._status in (DaemonStatus.STARTING, DaemonStatus.RUNNING)
 
     def start(self) -> None:
-        """Arranca el daemon en background. No bloquea."""
+        """Arranca el daemon en background. No bloquea la GUI."""
         if self.is_running():
             logger.info("start() ignorado: el daemon ya esta corriendo")
             return
@@ -156,14 +175,9 @@ class ProxyDaemon:
         self._set_status(DaemonStatus.STARTING)
         self._last_error = ""
 
-        # Kill zombies antes de bindear (solo Windows)
-        if self.config.kill_zombies_on_startup:
-            for printer_cfg in self.config.printers:
-                killed = kill_zombies_on_port(printer_cfg.port)
-                if killed:
-                    logger.info(
-                        f"  Puerto {printer_cfg.port}: matados {len(killed)} zombie(s) PID={killed}"
-                    )
+        # Nota: el kill de zombies se hace DENTRO del thread worker
+        # (_run_thread) para que la GUI no se bloquee durante los ~15s
+        # que puede tardar netstat con muchas conexiones abiertas.
 
         self._thread = threading.Thread(target=self._run_thread, name="ProxyDaemon", daemon=True)
         self._thread.start()
@@ -207,6 +221,18 @@ class ProxyDaemon:
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+        # Kill zombies aqui (en el thread worker) para no bloquear la GUI
+        if self.config.kill_zombies_on_startup:
+            for printer_cfg in self.config.printers:
+                try:
+                    killed = kill_zombies_on_port(printer_cfg.port)
+                    if killed:
+                        logger.info(
+                            f"  Puerto {printer_cfg.port}: matados {len(killed)} zombie(s) PID={killed}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error limpiando zombies en puerto {printer_cfg.port}: {e}")
+
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
 
@@ -245,6 +271,13 @@ class ProxyDaemon:
                 app,
                 host="::",  # dual-stack IPv6+IPv4
                 port=printer_cfg.port,
+                # log_config=None desactiva el logging por defecto de uvicorn.
+                # En PyInstaller --windowed, sys.stdout es None y el formatter
+                # default de uvicorn llama sys.stdout.isatty() -> AttributeError.
+                # Nosotros ya tenemos nuestro logger propio (consola + archivo
+                # rotativo + puente Qt), asi que uvicorn no necesita configurar
+                # nada.
+                log_config=None,
                 log_level="warning",
                 access_log=False,
                 loop="asyncio",

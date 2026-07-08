@@ -9,9 +9,15 @@
 
 ## Estado actual
 
-- **Version**: 2.0.0
-- **Ultima actualizacion**: 2026-07-07
-- **Resumen**: Fase 2 completada. App GUI nativa PySide6 con dashboard, gestion
+- **Version**: 2.0.1
+- **Ultima actualizacion**: 2026-07-08
+- **Resumen**: v2.0.1 corrige tres bugs de primer arranque en produccion
+  encontrados al probar el installer real: (1) uvicorn fallando por
+  `sys.stdout=None` en PyInstaller windowed, (2) `netstat -ano` con
+  timeout muy corto congelando la GUI, (3) subprocess flasheando ventanas
+  CMD por falta de CREATE_NO_WINDOW.
+
+Fase 2 completada. App GUI nativa PySide6 con dashboard, gestion
   de impresoras, visor de logs en tiempo real, gestor de certificado con
   renovacion en un click, panel de sistema (auto-inicio, verbose, retencion),
   y auto-actualizacion via GitHub Releases con notificacion en la bandeja del
@@ -24,6 +30,26 @@
 ---
 
 ## Hitos completados
+
+### v2.0.1 — Fixes de primer arranque en produccion
+
+Al probar el `.exe` real generado por el CI, tres bugs sobre PyInstaller
+`--windowed` bloquearon el arranque del daemon:
+
+- **Uvicorn crasheaba con `Unable to configure formatter 'default'`**:
+  uvicorn intenta configurar un ColourizedFormatter que llama
+  `sys.stdout.isatty()`, pero en modo `--windowed` `sys.stdout` es `None`
+  y falla con `AttributeError`. Fix: pasar `log_config=None` a
+  `uvicorn.Config` (ya tenemos nuestro propio logger)
+- **`sys.stdout`/`sys.stderr` = None** rompiendo prints tempranos de
+  `config_manager.py`. Fix: guard global en `posprintproxy/__main__.py`
+  que reemplaza streams None con buffers en memoria
+- **`netstat -ano` timeout de 5s** demasiado corto para Windows con muchas
+  conexiones. Fix: subido a 30s + `CREATE_NO_WINDOW` para no flashear CMDs
+- **`kill_zombies_on_port` bloqueaba la GUI** hasta 15s. Fix: movido al
+  hilo worker (`_run_thread`) para que `daemon.start()` retorne inmediato
+- **`mkcert` flasheaba CMD** al instalar CA y generar cert. Fix: mismo
+  `CREATE_NO_WINDOW` en `cert_ctrl.py`
 
 ### v2.0.0 — Fase 2: app nativa PySide6 + tray + auto-update + installer
 

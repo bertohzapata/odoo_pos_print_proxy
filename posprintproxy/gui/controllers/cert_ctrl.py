@@ -32,6 +32,13 @@ MKCERT_URL = (
     "mkcert-v1.4.4-windows-amd64.exe"
 )
 
+# En PyInstaller --windowed, sin este flag cada llamada a subprocess.run
+# flashea una ventana CMD momentanea en la barra de tareas.
+if sys.platform == "win32":
+    _WIN_SUBPROC = {"creationflags": 0x08000000}  # CREATE_NO_WINDOW
+else:
+    _WIN_SUBPROC = {}
+
 
 # ============================================================================
 # Info de cert
@@ -173,6 +180,7 @@ class CertRenewWorker(QThread):
         result = subprocess.run(
             [str(self.mkcert_binary), "-install"],
             capture_output=True, text=True, timeout=60,
+            **_WIN_SUBPROC,
         )
         if result.returncode != 0:
             raise RuntimeError(
@@ -192,6 +200,7 @@ class CertRenewWorker(QThread):
                 "localhost", "127.0.0.1", "::1",
             ],
             capture_output=True, text=True, timeout=30,
+            **_WIN_SUBPROC,
         )
         if result.returncode != 0:
             raise RuntimeError(

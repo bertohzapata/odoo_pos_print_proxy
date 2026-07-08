@@ -9,16 +9,190 @@
 
 ## Estado actual
 
-- **Version**: 1.3.0
-- **Ultima actualizacion**: 2026-06-24
-- **Resumen**: La app funciona end-to-end en Windows 11 (recibos, cocina y
-  cajon de dinero) con HTTPS local. Logs limpios. Existe un bug abierto en
-  Windows 10 ("status errors" pese a cert valido y `/hello` OK) que necesita
-  diagnostico antes de iniciar Fase 1.
+- **Version**: 2.0.0
+- **Ultima actualizacion**: 2026-07-07
+- **Resumen**: Fase 2 completada. App GUI nativa PySide6 con dashboard, gestion
+  de impresoras, visor de logs en tiempo real, gestor de certificado con
+  renovacion en un click, panel de sistema (auto-inicio, verbose, retencion),
+  y auto-actualizacion via GitHub Releases con notificacion en la bandeja del
+  sistema. System tray icon con menu completo. Codigo empaquetable como .exe
+  via PyInstaller + Inno Setup (build local y CI listos). El daemon FastAPI/
+  uvicorn de v1.4 vive ahora embebido y controlado por hilos worker. Se
+  descartan `config.yaml`/consola/`start_proxy.bat` como interfaz de usuario;
+  quedan como fallback para desarrollo.
 
 ---
 
 ## Hitos completados
+
+### v2.0.0 — Fase 2: app nativa PySide6 + tray + auto-update + installer
+
+Cierre completo de Fase 2 del roadmap. Salto de version mayor porque cambia
+la superficie de instalacion, la forma de configurar y la manera de arrancar.
+
+**Reestructura a paquete Python**:
+- Todo el codigo v1.4 se mueve dentro del paquete `posprintproxy/` con
+  subpaquetes `daemon/`, `gui/`, `util/`
+- Root del repo queda con `main.py` (shim retrocompat), `config.yaml.default`
+  (plantilla para el installer), `installer/`, `.github/workflows/`
+- Entry point unificado: `python -m posprintproxy` lanza la GUI;
+  `python -m posprintproxy --daemon` corre solo el daemon (retrocompat v1.4)
+
+**Daemon embebible (`posprintproxy.daemon.ProxyDaemon`)**:
+- Antes: `asyncio.run(...)` bloqueante como main
+- Ahora: clase con `start()/stop()/restart()` que corre uvicorn en un thread
+  worker con su propio event loop, controlable desde la GUI
+- Estado observable via `snapshot() -> DaemonSnapshot(status, running_ports, last_error)`
+- Enum `DaemonStatus`: STOPPED / STARTING / RUNNING / STOPPING / ERROR
+
+**GUI PySide6 con look propio (no template AI)**:
+- Tema dark custom en `theme.qss`, ~350 lineas: paleta oscura con acento
+  turquesa `#40c2b2`, tipografia Segoe UI, mono Cascadia para logs,
+  cards con radio 8px, sidebar con borde-acento en estado activo
+- Ventana con sidebar de 5 vistas: Dashboard / Impresoras / Logs / Certificado / Sistema
+- Cierre a bandeja (X esconde en tray, no cierra; salir real desde menu tray)
+
+**Dashboard (`views/dashboard_view.py`)**:
+- Estado del daemon en tiempo real con badge de color + dot indicator
+- Botones grandes Iniciar / Detener / Reiniciar (habilitados segun estado)
+- Card de resumen: dominio Odoo + numero de impresoras + puertos activos
+
+**Impresoras (`views/printers_view.py`)**:
+- Tabla con Nombre / Puerto / Windows Printer / Ancho / Rol
+- Botones Agregar / Editar / Eliminar
+- Dialogo modal `PrinterDialog` con autocomplete de impresoras Windows
+  detectadas + validacion (puerto libre, nombre unico, rol valido)
+- Guardado en config.yaml en tiempo real. Advertencia si el daemon esta
+  corriendo (requiere reinicio para tomar efecto)
+
+**Logs en tiempo real (`views/logs_view.py`)**:
+- Subscripcion al logger raiz via `QtLogHandler` que emite senales Qt
+- Ring buffer de 2000 lineas; filtro por nivel (Todos / INFO+ / WARN+ / ERROR)
+- Auto-scroll toggleable, colores por nivel, boton exportar a TXT
+
+**Certificado (`views/cert_view.py`, `controllers/cert_ctrl.py`)**:
+- Inspeccion con `cryptography`: sujeto, emisor, fechas, dias restantes
+- Alerta visual si expira en <30 dias o ya expiro
+- Boton "Renovar ahora": corre mkcert en QThread, muestra progreso, feedback
+- Auto-descarga de `mkcert.exe` si no esta bundleado
+
+**Sistema (`views/system_view.py`)**:
+- Toggle auto-inicio con Windows (via registro HKCU\\Run), sin admin
+- Toggle verbose + spin de retencion de logs, guardado a config
+- Botones "Abrir carpeta de logs" / "Abrir carpeta de datos"
+- Panel de actualizaciones: version actual + estado consulta + boton "Buscar ahora"
+
+**System tray (`gui/tray.py`)**:
+- Icono dinamico (verde=running, gris=stopped, rojo=error) generado en runtime
+- Menu contextual: Estado / Abrir dashboard / Iniciar / Detener / Reiniciar /
+  Ver logs / Certificado / (Actualizacion disponible) / Salir
+- Click izquierdo abre el dashboard; tooltip muestra estado + puertos activos
+- Notificacion nativa cuando hay update disponible
+
+**Auto-actualizacion (`controllers/update_ctrl.py`)**:
+- Consulta GitHub Releases API 1 min despues del arranque, luego cada 24h
+- Parseo semver (`util/version.py`), comparacion segura
+- Emite `update_found` con `UpdateInfo(latest_version, download_url, notes)`
+- Tray muestra item "Actualizar a vX.Y.Z" + notificacion nativa Windows
+
+**Persistencia y paths (`util/paths.py`)**:
+- Instalado: `%APPDATA%\\POSPrintProxy\\{config.yaml, certs/, logs/}`
+- Dev (repo clonado): todo relativo al cwd
+- Deteccion via `sys.frozen` (PyInstaller flag)
+- Certs persisten en desinstalacion (preservados para renovacion futura)
+
+**Auto-inicio Windows (`util/autostart.py`)**:
+- Habilita/deshabilita entrada en `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`
+- Flag `--minimized` para arrancar en la bandeja sin abrir dashboard
+- Sin admin requerido
+
+**Installer y CI**:
+- `installer/build_exe.py`: wrapper de PyInstaller, descarga mkcert.exe si falta
+- `installer/posprintproxy.spec`: spec explicito de PyInstaller
+- `installer/setup.iss`: Inno Setup 6, espanol+ingles, detecta version previa
+  y la desinstala silenciosa antes, preserva `%APPDATA%\\POSPrintProxy\\`
+- `installer/build_local.bat`: build end-to-end local (Windows + Python + Inno)
+- `.github/workflows/release.yml`: CI que en cada tag `v2.*` bundlea el
+  installer y lo sube a Releases
+
+**Dependencias nuevas**:
+- `PySide6>=6.6.0`, `cryptography>=42.0`
+- Dev: `pyinstaller>=6.6.0`
+
+**Retirado / reemplazado**:
+- `setup_https.bat` (reemplazado por el boton "Renovar" en la vista Cert)
+- Los modulos flat `app.py`, `config_manager.py`, `logger_setup.py`,
+  `printer_manager.py`, `proxy_server.py`, `printer_backend.py` en la raiz
+  (todos migrados a `posprintproxy/daemon/`)
+- Edicion manual de `config.yaml` como UX principal (queda solo como
+  fallback en dev; la GUI escribe el YAML por ti)
+
+**Validacion realizada en esta sesion**:
+- Sintaxis Python de los 20 modulos del paquete: OK
+- Imports cruzados del paquete completo (mock de win32print): OK
+- Instanciacion headless de la GUI (QT_QPA_PLATFORM=offscreen): OK
+- Renderizado de las 5 vistas capturadas como PNG para validar tema: OK
+- Config legacy (v1.4 formato) sigue cargando por retrocompat automatica
+
+### v1.4.0 — Fase 1: refactor modular + multi-impresora + logs archivo
+
+Cierre completo de Fase 1 del roadmap.
+
+**Refactor modular**:
+- `main.py` (290 lineas monoliticas) partido en 5 modulos con responsabilidad
+  clara:
+  - `app.py` — entry point, orquestacion, banner, cert self-test, zombie kill
+  - `config_manager.py` — parseo + validacion + retrocompat legacy
+  - `logger_setup.py` — consola + archivo rotativo + silenciado de terceros
+  - `printer_manager.py` — Printer dataclass + detect_or_warn
+  - `proxy_server.py` — fabrica de FastAPI por impresora + middleware + endpoints
+- `main.py` queda como shim delgado que llama a `app.main()` (retrocompat con
+  `start_proxy.bat` y docs existentes)
+
+**Multi-impresora**:
+- Nuevo esquema `printers:` en config.yaml con lista de impresoras. Cada una
+  con `name`, `port`, `windows_printer`, `paper_width`, `role`
+- Roles informativos: `receipt` / `kitchen` / `bar` / `both` (etiquetas para
+  logs, la asignacion real la hace Odoo via `product_categories_ids`)
+- Cada impresora arranca su propia instancia FastAPI en su puerto. Todas se
+  levantan en paralelo con `asyncio.gather()`
+- Validacion de puertos y nombres unicos al arrancar
+- Retrocompat automatica: si config.yaml tiene el formato legacy (`printer_name`
+  + `kitchen_printer_name` en el top-level), se convierte internamente al
+  esquema nuevo sin que el usuario tenga que migrar
+
+**Logs a archivo con rotacion**:
+- `TimedRotatingFileHandler` a `logs/proxy.log`, rota a medianoche
+- Retencion configurable (`log_retention_days`, default 30)
+- Formato de archivo con timestamp completo `YYYY-MM-DD HH:MM:SS` y nombre de
+  logger (util con multi-impresora)
+- Formato de consola compacto `HH:MM:SS` como antes
+- Si no se puede escribir a archivo (permisos, disco), sigue con consola y
+  emite `WARN` una sola vez
+
+**Testing**:
+- Nuevo `TESTS.md` con 11 tests manuales (A-K) cubriendo arranque, hello,
+  handshake, impresion recibos, impresion cocina, cajon, modo offline,
+  recuperacion de zombies, retrocompat legacy, multi-impresora paralela,
+  y logs persistentes
+
+**Ajustes globales nuevos en config.yaml**:
+- `verbose: false` (ya existia, ahora tambien afecta el archivo de log)
+- `log_dir: "logs"`
+- `log_retention_days: 30`
+- `kill_zombies_on_startup: true`
+
+### v1.3.1 — Bind dual-stack + proteccion contra zombies
+
+- Cambio de `host="127.0.0.1"` a `host="::"` en el bind de uvicorn. En
+  Windows 11 (25H2 confirmado) el navegador puede resolver `localhost` a
+  `::1` (IPv6). Con bind exclusivo a IPv4 el proxy se volvia inalcanzable
+  desde el navegador aunque el proceso siguiera arriba
+- `start_proxy.bat` ahora detecta y mata cualquier proceso zombie que este
+  escuchando en el puerto 8072 antes de arrancar el nuevo. Esto previene
+  la acumulacion de instancias huerfanas cuando el usuario cierra la
+  ventana CMD sin `Ctrl+C` (uvicorn en Windows no siempre limpia sockets)
+- Version banner actualizada a v1.3.1 con nota "bind dual-stack IPv4+IPv6"
 
 ### v1.3 — Estabilidad y logs limpios
 
@@ -134,6 +308,35 @@
   `use_lna`. Si esta activado de antes, hay que borrar el parametro del
   sistema o ponerlo en `0`. Cerrar y reabrir la sesion POS
 
+### El proxy "dejo de funcionar solo" despues de semanas de no usarlo
+
+- **Sintoma**: en el equipo de desarrollo (Win 11 25H2) el proxy arrancaba
+  correctamente (log v1.3 sin errores, cert valido, self-test OK) pero al
+  abrir `https://localhost:8072/hw_proxy/hello` en el navegador no cargaba
+  nada. Ni ping, ni JSON. Sin cambios previos al codigo ni a la config
+- **Causa raiz**: dos problemas superpuestos:
+  1. **Bind exclusivo a IPv4**: en v1.3 se cambio el host de `0.0.0.0` a
+     `127.0.0.1` por seguridad (evitar exponer LAN). Pero en Windows 11
+     25H2 el navegador resuelve `localhost` a `::1` (IPv6). Ninguna
+     conexion llegaba al proceso porque escuchaba solo en IPv4
+  2. **Procesos zombie acumulados**: sesiones previas de proxy cerradas
+     con la X (sin Ctrl+C) dejaron 3 procesos zombie escuchando en
+     distintos bindings (uno en `0.0.0.0`, otro en `[::1]`, otro en
+     `127.0.0.1`). El sistema enrutaba las conexiones IPv6 al zombie con
+     bind `[::1]` que no respondia correctamente (30 conexiones en
+     `TIME_WAIT` visibles en netstat)
+- **Como se diagnostico**: `netstat -ano | findstr :8072` mostro tres PIDs
+  distintos LISTENING en el mismo puerto con diferentes bindings, y una
+  larga lista de conexiones fallidas en `TIME_WAIT` desde `[::1]` — prueba
+  concluyente de que el navegador conectaba por IPv6 y el proxy activo
+  (nuestro v1.3) no lo veia
+- **Solucion**:
+  - Cambio a `host="::"` en uvicorn (dual-stack: escucha IPv6 e IPv4
+    simultaneamente)
+  - `start_proxy.bat` mata cualquier proceso zombie en el puerto antes
+    de arrancar
+- **Documentado en**: v1.3.1
+
 ### Certificados copiados entre PCs no funcionaban
 
 - **Causa raiz**: cada PC tiene su propia CA mkcert privada. Si se copian
@@ -181,74 +384,71 @@
 
 ## Roadmap por fases
 
-### Fase 1 — Estabilizacion + refactor + multi-impresora
+### Fase 1 — Estabilizacion + refactor + multi-impresora ✅ COMPLETADA en v1.4.0
 
 **Objetivo**: dejar el codigo modular y soportar N impresoras antes de
 empezar la GUI.
 
-- [ ] Diagnosticar y resolver el bug de Windows 10 (precondicion)
-- [ ] Refactor `main.py` en modulos:
-  - `proxy_server.py` — solo el servidor FastAPI con sus endpoints
-  - `printer_manager.py` — gestion de impresoras multiples
-  - `config_manager.py` — lectura/escritura/validacion de `config.yaml`
-  - `app.py` — entry point que orquesta todo
-- [ ] Migrar `config.yaml` al esquema multi-impresora con roles:
-  ```yaml
-  printers:
-    - name: "Caja"
-      port: 8072
-      windows_printer: "POS-80"
-      paper_width: 576
-      role: receipt   # receipt | kitchen | bar | both
-  ```
-- [ ] Documentar la migracion (config viejo sigue funcionando como fallback)
-- [ ] Tests end-to-end documentados (manuales, paso a paso)
-- [ ] Validar funcionalidad en Win10 + Win11 con cert recien generado
+- [x] Refactor `main.py` en modulos (`app.py`, `config_manager.py`,
+  `logger_setup.py`, `printer_manager.py`, `proxy_server.py`)
+- [x] Migrar `config.yaml` al esquema multi-impresora con roles
+- [x] Retrocompat automatica del formato legacy (sin migracion forzada)
+- [x] Logs a archivo con rotacion diaria
+- [x] Tests end-to-end documentados (TESTS.md, 11 tests A-K)
+- [ ] Ejecutar la suite TESTS.md en equipo de desarrollo con v1.4.0
+- [ ] **Pausado por decision del usuario**: diagnosticar bug de Windows 10
+  (se retomara con menor riesgo, probablemente en Fase 2 con la GUI que
+  facilita capturar estado sin depender de DevTools)
+- [ ] **Pausado por decision del usuario**: validacion en Win10 con cert
+  recien generado
 
-### Fase 2 — App nativa Windows (tray + dashboard + auto-start)
+### Fase 2 — App nativa Windows (tray + dashboard + auto-start) ✅ COMPLETADA en v2.0.0
 
 **Objetivo**: dejar de ser un script CMD y convertirse en una app con UX
-para perfil no tecnico.
+para perfil no tecnico. Se hizo con **PySide6/Qt** (no CustomTkinter como
+se contemplaba antes) para tener un look profesional lejos del "template AI".
 
-- [ ] System tray icon (pystray) con icono verde/rojo segun estado
-- [ ] Menu contextual del tray:
-  - Estado en texto: "Activo en puerto 8072"
-  - Abrir Dashboard
-  - Reiniciar / Detener / Iniciar daemon
-  - Toggle "Iniciar con Windows"
-  - Acerca de / Salir
-- [ ] Dashboard GUI (CustomTkinter) con tabs:
-  - **Impresoras**: tabla con CRUD, modal de edicion con dropdown autodetectado
-    de impresoras Windows, boton "Imprimir pagina de prueba"
-  - **Conexion Odoo**: campo dominio, boton "Probar conectividad", indicador
-    de estado del cert HTTPS, boton "Reinstalar certificado"
-  - **Sistema**: toggle auto-start, toggle "iniciar minimizado", abrir
-    carpeta de logs, version + buscar actualizaciones
-  - **Logs en vivo**: stream de los ultimos N mensajes, boton "Limpiar" y
-    "Exportar a archivo"
-- [ ] Auto-start con Windows via registro
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (sin admin)
-- [ ] Funciona identico en Win10 y Win11
+- [x] System tray icon con icono dinamico verde/gris/rojo segun estado
+- [x] Menu contextual del tray completo (estado, dashboard, iniciar/detener/
+  reiniciar, ver logs, cert, salir)
+- [x] Dashboard PySide6 con sidebar en vez de tabs (mas moderno):
+  - **Dashboard**: estado del daemon con boton grande de arranque + resumen
+  - **Impresoras**: tabla CRUD + dialogo modal con validacion + autodetect
+  - **Logs**: stream en vivo con filtro por nivel + auto-scroll + exportar
+  - **Certificado**: inspeccion + renovacion en un click (mkcert en QThread)
+  - **Sistema**: auto-start toggle + verbose + retencion + updates + abrir carpetas
+- [x] Auto-start via HKCU (sin admin), con flag `--minimized`
+- [x] Funcionalidades avanzadas de config editables en tiempo real desde GUI
+- [x] Renovacion facil de certificado (boton "Renovar ahora" que dispara mkcert)
+- [x] Auto-update via GitHub Releases con notificacion en la bandeja
+- [x] Cierre a bandeja (X esconde, Salir del tray termina proceso)
 
-### Fase 3 — Empaquetado .exe + installer
+### Fase 3 — Empaquetado .exe + installer ✅ COMPLETADA en v2.0.0
+
+Fusionada con Fase 2 dado que el installer era pre-requisito de "instalar
+encima de la version anterior".
 
 **Objetivo**: distribucion de un solo `.exe` que cualquier persona instala
 con doble click.
 
-- [ ] PyInstaller con `--onedir` (mas rapido al iniciar que `--onefile`)
-- [ ] Bundle incluye:
-  - Runtime Python embebido
-  - Todas las dependencias (FastAPI, uvicorn, customtkinter, pystray, etc.)
-  - `mkcert.exe` precargado
-  - Iconos del tray
-- [ ] Installer con Inno Setup (`POSPrintProxySetup.exe`) que:
-  - Copia archivos a `C:\Program Files\POSPrintProxy\`
-  - Crea acceso directo en menu inicio + escritorio
-  - Pregunta: instalar certificado HTTPS (si por default)
-  - Pregunta: iniciar con Windows (si por default)
-  - Pregunta: iniciar el servicio ahora (si por default)
+- [x] PyInstaller con `--onedir` (rapido al iniciar) + spec dedicado
+- [x] Bundle incluye Python embebido + PySide6 + FastAPI + uvicorn +
+  cryptography + PyYAML + Pillow + `mkcert.exe`
+- [x] Inno Setup 6 con `installer/setup.iss`:
+  - Copia archivos a `C:\Program Files\POSPrintProxy\` (o AppData si sin admin)
+  - Crea acceso directo en menu inicio + opcional en escritorio
+  - Detecta version previa (por AppId) y la desinstala silenciosa antes
+  - Preserva `%APPDATA%\POSPrintProxy\` (config + certs + logs) al reinstalar
+  - Tasks opcionales: "Iniciar con Windows" y "Iniciar ahora"
+- [x] Idiomas espanol + ingles
+- [x] `installer/build_local.bat` para build local (Windows + Python + Inno)
+- [x] `.github/workflows/release.yml` para build en CI, sube a Releases
+
+**Pendiente (post-release):**
 - [ ] Probar el installer en una VM Win10 limpia y una VM Win11 limpia
+- [ ] Firma de codigo (opcional, elimina el warning SmartScreen)
 - [ ] Distribucion controlada a las 5+ tiendas
+- [ ] Iconos `installer/app.ico` y tray SVG (por ahora se generan runtime)
 
 ### Fase 4 — macOS
 
@@ -292,6 +492,66 @@ Estas decisiones se deben tomar antes de o durante Fase 2:
 ---
 
 ## Notas de sesion (changelog tecnico)
+
+### 2026-07-07 — Sesion v2.0.0 (noche)
+
+- Fase 2 completada en un solo salto grande. Version 2.0 porque cambia el
+  contrato (installer, sin YAML manual, tray, GUI). Fase 3 fusionada porque
+  el installer era pre-requisito de "instalar encima de la anterior"
+- Decisiones del sprint (respondidas por el usuario):
+  - GUI: **PySide6/Qt** (no CustomTkinter). Bundle mas pesado pero look
+    profesional muy lejos del template AI
+  - Installer: **CI + scripts locales** (ambos). GitHub Actions produce
+    releases; `build_local.bat` para dev iterativo
+  - Auto-update: **si, con aviso en tray** via GitHub Releases API
+- Reestructura completa a paquete Python `posprintproxy/` con subpaquetes
+  `daemon/`, `gui/`, `util/`. Los archivos flat de v1.4 se movieron. La
+  raiz del repo queda casi vacia (solo `main.py` shim + `installer/` + docs)
+- Codigo escrito en esta sesion: ~2800 lineas Python en 20 modulos, ~500
+  lineas QSS para el tema custom, ~200 lineas de scripts de build/CI
+- Validacion offscreen del GUI headless: todos los widgets se instancian sin
+  crash, las 5 vistas renderizan y los screenshots muestran el look correcto
+- El daemon v1.4 (que ya funcionaba en produccion) queda intacto en
+  `posprintproxy/daemon/`. Solo se agrego una clase `ProxyDaemon` que lo
+  envuelve para ser controlable desde otro thread
+- Retrocompat de config.yaml legacy sigue funcionando: si un usuario de v1.4
+  actualiza a v2.0, su config con `printer_name` se carga sin migracion,
+  y en la primera edicion desde la GUI se reescribe en formato nuevo
+- Los certs mkcert existentes se preservan si el installer detecta el path
+  `%APPDATA%\POSPrintProxy\certs\`; no hay que renovar tras el upgrade
+
+### 2026-07-07 — Sesion v1.4.0 (tarde)
+
+- Fase 1 del roadmap completada
+- Decisiones tomadas antes del sprint:
+  1. Alcance: refactor + multi-impresora en el mismo sprint (opcion
+     recomendada)
+  2. Logs: consola + archivo rotativo diario, retencion 30 dias
+  3. Config legacy: retrocompat automatica (sin migracion forzada)
+- Refactor a 5 modulos + shim main.py. Sintaxis validada, imports validados,
+  parseo validado con 5 casos (legacy simple, legacy con cocina, formato
+  nuevo, puertos duplicados rechazados, config.yaml real)
+- Multi-impresora via `asyncio.gather()` de multiples uvicorn.Server, uno
+  por impresora. Cada uno con su propio FastAPI, middleware y state
+- Suite TESTS.md con 11 tests manuales A-K creada
+- Pendiente para la proxima sesion: correr TESTS.md en Windows real con
+  v1.4.0 para confirmar que el refactor no introdujo regresiones
+
+### 2026-07-07 — Sesion v1.3.1
+
+- Diagnostico local: el proxy en el equipo de desarrollo dejo de responder
+  en `localhost` sin cambios previos
+- Con `netstat -ano | findstr :8072` se descubrieron 3 procesos zombie
+  escuchando en el mismo puerto con distintos bindings, y decenas de
+  conexiones fallidas en `TIME_WAIT` desde `[::1]` — evidencia definitiva
+  de que el navegador conecta por IPv6 y el bind exclusivo a IPv4 dejaba
+  el proxy silenciosamente inalcanzable
+- Fix aplicado: bind dual-stack `"::"` en uvicorn + protector anti-zombies
+  en `start_proxy.bat`
+- Actualizada plantilla DIAGNOSTICO.md con el nuevo test recomendado
+  (`netstat -ano | findstr :8072`) que resulta ser mas util que muchas
+  otras validaciones porque expone directo si hay instancias zombie o
+  bindings incorrectos
 
 ### 2026-06-24
 

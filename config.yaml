@@ -2,29 +2,87 @@
 # POS Print Proxy - Configuracion por tienda
 # =============================================================================
 # Editar este archivo segun la tienda donde se instale.
+#
+# La app acepta DOS formatos: el legacy (una impresora en el top-level) y
+# el nuevo multi-impresora (lista 'printers:'). Ambos funcionan. Ver mas
+# abajo para el formato nuevo.
+
+# -----------------------------------------------------------------------------
+# Ajustes globales (aplican en cualquiera de los dos formatos)
+# -----------------------------------------------------------------------------
 
 # Dominio de Odoo permitido (CORS). Solo este dominio puede enviar impresiones.
-# IMPORTANTE: debe ser EXACTAMENTE igual a lo que aparece en la barra del navegador
-# (con https://, sin barra final, sin path).
+# IMPORTANTE: debe ser EXACTAMENTE igual a lo que aparece en la barra del
+# navegador (con https://, sin barra final, sin path).
 odoo_domain: "https://tudominio.com"
+
+# Logs detallados. false = solo eventos importantes (conexion, impresion, errores).
+# true = muestra cada keep-alive status_json (util solo para depurar problemas).
+verbose: false
+
+# Carpeta donde guardar los logs a disco (relativa a la carpeta del proxy).
+# Se crea si no existe. Rota un archivo por dia.
+log_dir: "logs"
+
+# Cuantos dias de logs guardar. Los mas viejos se borran automaticamente.
+log_retention_days: 30
+
+# Al arrancar, matar procesos previos escuchando en los puertos configurados.
+# Evita el bug de "el proxy dejo de responder" por instancias zombies de
+# sesiones anteriores. Solo aplica en Windows.
+kill_zombies_on_startup: true
+
+# -----------------------------------------------------------------------------
+# FORMATO LEGACY (una sola impresora, retrocompatible)
+# -----------------------------------------------------------------------------
+# Si vienes de una version anterior, deja esta seccion como estaba. La app
+# la detecta y la convierte automaticamente al formato nuevo por dentro.
 
 # Puerto donde escucha el proxy en esta PC
 port: 8072
 
-# Nombre de la impresora en Windows (tal como aparece en "Dispositivos e Impresoras")
-# Para ver los nombres disponibles, ejecutar: python -c "import win32print; print([p[2] for p in win32print.EnumPrinters(2)])"
+# Nombre EXACTO de la impresora en Windows
+# Para ver los nombres disponibles: abrir https://localhost:8072/printers
+# o ejecutar: python -c "import win32print; print([p[2] for p in win32print.EnumPrinters(2)])"
 printer_name: "POS-80"
 
-# Ancho del papel en pixeles (80mm = 576px para 203dpi, 58mm = 384px)
+# Ancho del papel en pixeles (576 para 80mm @ 203dpi, 384 para 58mm)
 paper_width: 576
 
-# Logs detallados. false = solo eventos importantes (conexion, impresion, errores).
-# true = muestra cada keep-alive status (util solo para depurar problemas).
-verbose: false
-
-# --- Impresora de cocina separada (opcional) ---
-# Descomentar si esta tienda tiene una segunda impresora fisica para cocina.
-# En Odoo, configurar la impresora de cocina con localhost:8073
+# Impresora de cocina separada (opcional, formato legacy).
+# Descomentar si esta tienda tiene una segunda impresora fisica.
+# En Odoo, configurar la impresora de cocina apuntando a localhost:8073
 #
 # kitchen_printer_name: "KITCHEN-80"
 # kitchen_port: 8073
+
+# -----------------------------------------------------------------------------
+# FORMATO NUEVO (multi-impresora, recomendado a partir de v1.4)
+# -----------------------------------------------------------------------------
+# Si usas 'printers:' abajo, la app ignora 'port', 'printer_name',
+# 'paper_width' y 'kitchen_*' del formato legacy. Deja los legacy o
+# comentalos, es indistinto.
+#
+# Cada entrada crea una instancia FastAPI independiente en su propio
+# puerto. En Odoo, cada pos.printer apunta a su puerto correspondiente.
+#
+# Ejemplo (comentado):
+#
+# printers:
+#   - name: "Caja"
+#     port: 8072
+#     windows_printer: "POS-80"
+#     paper_width: 576
+#     role: receipt          # receipt | kitchen | bar | both (etiqueta informativa)
+#
+#   - name: "Cocina"
+#     port: 8073
+#     windows_printer: "KITCHEN-80"
+#     paper_width: 576
+#     role: kitchen
+#
+#   - name: "Bar"
+#     port: 8074
+#     windows_printer: "BAR-58"
+#     paper_width: 384
+#     role: bar

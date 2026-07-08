@@ -1,0 +1,1 @@
+"""Utilidades transversales del paquete."""

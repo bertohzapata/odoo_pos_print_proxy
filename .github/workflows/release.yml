@@ -1,0 +1,99 @@
+name: Release Windows installer
+
+on:
+  push:
+    tags:
+      - "v2.*"
+      - "v3.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (sin la v, ej: 2.0.0)"
+        required: true
+        default: "2.0.0"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "push") {
+            $ver = "${{ github.ref_name }}" -replace '^v',''
+          } elseif ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $ver = "${{ github.event.inputs.version }}"
+          } else {
+            $ver = "2.0.0-dev"
+          }
+          "APP_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Using version: $ver"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Bundle with PyInstaller
+        run: python installer/build_exe.py --clean
+
+      - name: Verify PyInstaller output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\POSPrintProxy\POSPrintProxy.exe")) {
+            Write-Error "PyInstaller no produjo el .exe esperado"
+            exit 1
+          }
+          Get-ChildItem "dist\POSPrintProxy" | Select-Object -First 20
+
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          Write-Host "Instalando Inno Setup via Chocolatey..."
+          choco install innosetup -y --no-progress
+          $inno = "C:\Program Files (x86)\Inno Setup 6"
+          if (-not (Test-Path "$inno\ISCC.exe")) {
+            Write-Error "Inno Setup no se instalo correctamente"
+            exit 1
+          }
+          Write-Host "OK: $inno\ISCC.exe"
+
+      - name: Build installer with Inno Setup
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Program Files (x86)\Inno Setup 6;$env:PATH"
+          iscc /DAppVersion=$env:APP_VERSION installer\setup.iss
+          if (-not $?) { exit 1 }
+
+      - name: Show installer
+        shell: pwsh
+        run: |
+          Get-ChildItem dist_installer
+
+      - name: Upload installer as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: POSPrintProxySetup-${{ steps.version.outputs.version }}
+          path: dist_installer/POSPrintProxySetup-*.exe
+
+      - name: Publish to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist_installer/POSPrintProxySetup-*.exe
+          draft: false
+          generate_release_notes: true

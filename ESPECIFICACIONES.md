@@ -4,6 +4,12 @@
 > actualiza solo cuando hay cambios mayores de arquitectura, requisitos o
 > decisiones de diseno. Para tracking de progreso, ver [HITOS.md](HITOS.md).
 
+> **Actualizado a v2.0**: la app dejo de ser un script CLI y se convirtio
+> en una aplicacion Windows con GUI PySide6, installer `.exe`, tray icon,
+> auto-update y renovacion de certificado en un click. El motor de
+> impresion (daemon FastAPI + uvicorn) es identico a v1.4, pero ahora vive
+> embebido en la app y se controla desde el dashboard.
+
 ---
 
 ## Tabla de contenidos
@@ -16,6 +22,7 @@
 6. [Compatibilidad](#6-compatibilidad)
 7. [Restricciones y supuestos](#7-restricciones-y-supuestos)
 8. [Las dos rutas de impresion de Odoo POS](#8-las-dos-rutas-de-impresion-de-odoo-pos)
+9. [Arquitectura v2.0: paquete Python, GUI + daemon embebido](#9-arquitectura-v20)
 
 ---
 
@@ -558,6 +565,115 @@ endpoint `/hw_proxy/default_printer_action` con el mismo formato JSON-RPC.
   (gate `if (this.config.useProxy) await this.connectToProxy()`)
 - `addons/point_of_sale/static/src/app/services/hardware_proxy_service.js:51-72`
   (`connectToPrinter()` solo si `iface_print_via_proxy=True`)
+
+---
+
+## 9. Arquitectura v2.0
+
+### 9.1 Paquete Python
+
+```
+pos_print_proxy/                      (repo)
+├── main.py                           # Shim retrocompat (delega en __main__)
+├── config.yaml.default               # Plantilla del installer
+├── requirements.txt
+├── requirements-dev.txt
+├── posprintproxy/                    # PAQUETE PRINCIPAL
+│   ├── __init__.py                   # VERSION
+│   ├── __main__.py                   # entry point (GUI o --daemon)
+│   ├── daemon/                       # Motor de impresion (v1.4)
+│   │   ├── config_manager.py
+│   │   ├── daemon.py                 # NUEVO: ProxyDaemon (embebible)
+│   │   ├── logger_setup.py
+│   │   ├── printer_backend.py
+│   │   ├── printer_manager.py
+│   │   └── proxy_server.py
+│   ├── gui/                          # NUEVO en v2.0
+│   │   ├── app.py                    # QApplication + orquestacion
+│   │   ├── main_window.py            # Ventana con sidebar de 5 vistas
+│   │   ├── tray.py                   # QSystemTrayIcon
+│   │   ├── qt_log_handler.py         # Bridge logging -> QSignal
+│   │   ├── theme.qss                 # Estilos custom (dark + turquesa)
+│   │   ├── views/                    # Dashboard, Impresoras, Logs, Cert, Sistema
+│   │   ├── dialogs/                  # PrinterDialog
+│   │   └── controllers/              # Daemon, Config, Cert, Update
+│   └── util/                         # Paths, autostart, semver
+├── installer/                        # Empaquetado
+│   ├── build_exe.py
+│   ├── posprintproxy.spec
+│   ├── setup.iss                     # Inno Setup
+│   └── build_local.bat
+└── .github/workflows/release.yml     # CI (GitHub Actions)
+```
+
+### 9.2 Arquitectura de procesos
+
+Todo vive en un solo proceso Python (`POSPrintProxy.exe`):
+
+```
+Main Thread (Qt event loop)
+├── QApplication
+├── MainWindow con 5 vistas
+├── QSystemTrayIcon
+├── Controllers (DaemonController, ConfigController, CertController, UpdateController)
+└── QTimers para polling y updates
+
+Daemon Thread (creado por ProxyDaemon.start())
+├── asyncio event loop (SelectorEventLoop en Windows)
+├── uvicorn.Server[0]  <- Impresora "Caja" en puerto 8072
+├── uvicorn.Server[1]  <- Impresora "Cocina" en puerto 8073
+└── uvicorn.Server[N]  <- ...
+
+QThreads efimeros (creados on-demand)
+├── CertRenewWorker      (para mkcert -install + generar cert)
+└── UpdateCheckWorker    (para consultar GitHub Releases API)
+```
+
+Ventajas de esta arquitectura:
+- **Un solo proceso**: el installer, el auto-start y el uninstall no
+  tienen que gestionar servicios separados
+- **UI responsiva**: el daemon corre en su hilo, el Qt event loop nunca
+  se bloquea
+- **Log unificado**: todos los eventos (daemon + GUI + updates) van al
+  mismo `proxy.log` y al mismo visor en tiempo real
+- **Recovery limpio**: al cerrar la app se hace `daemon.stop(timeout=3)`
+  con shutdown ordenado de todos los servidores uvicorn
+
+### 9.3 Persistencia (paths)
+
+Detectado en tiempo de ejecucion via `sys.frozen`:
+
+| Modo | Carpeta de datos |
+|---|---|
+| Dev (repo clonado) | cwd (raiz del repo) |
+| Instalado (PyInstaller) | `%APPDATA%\POSPrintProxy\` |
+
+En modo instalado:
+- `config.yaml` (editable desde la GUI, escrito atomicamente con `.tmp` + rename)
+- `certs/localhost.pem`, `certs/localhost-key.pem`, `certs/mkcert.exe`
+- `logs/proxy.log` con rotacion diaria (30 dias por default)
+
+Esta ubicacion sobrevive a las desinstalaciones normales del installer,
+lo que permite:
+- Reinstalar sin perder el cert (evita renovarlo cada vez)
+- Multiples usuarios Windows con configs separadas
+- Backup facil (una sola carpeta)
+
+### 9.4 Auto-actualizacion
+
+Cada 24h la app consulta la API de GitHub Releases con `urllib` puro
+(sin dependencia extra). Compara la version del tag con `__version__`
+del paquete usando el parser semver de `util/version.py`. Si hay una
+version nueva:
+
+1. Emite senial Qt `update_found(UpdateInfo)`
+2. El tray muestra el item "Actualizar a vX.Y.Z"
+3. Notificacion nativa de Windows: "Actualizacion disponible"
+4. El usuario abre la vista Sistema y click en "Abrir release" -> browser
+
+La descarga y ejecucion del nuevo installer es manual (no autodownload):
+mantiene al usuario en control y evita corrupcion si el installer requiere
+UAC durante una descarga.
 
 ---
 

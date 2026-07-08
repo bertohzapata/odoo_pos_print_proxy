@@ -1,59 +1,43 @@
 @echo off
-title POS Print Proxy
+REM ======================================================================
+REM  POS Print Proxy v2.0 - launcher de desarrollo
+REM
+REM  Este BAT es para correr desde el repo clonado (sin installer). El
+REM  usuario final NO lo ve: instala el .exe y arranca la app desde el
+REM  menu inicio o desde el system tray si tiene auto-start.
+REM ======================================================================
+
+title POS Print Proxy - Dev
 echo ============================================
-echo   POS Print Proxy - Iniciando...
+echo   POS Print Proxy v2.0 - Dev launcher
 echo ============================================
 echo.
 
 cd /d "%~dp0"
 
-REM Verificar que Python esta instalado
+REM Python
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python no esta instalado o no esta en el PATH.
-    echo Descarga Python 3.11+ desde https://www.python.org/downloads/
-    echo Asegurate de marcar "Add Python to PATH" durante la instalacion.
+    echo ERROR: Python no esta en el PATH.
+    echo Instala Python 3.11+ desde https://www.python.org/downloads/
     pause
     exit /b 1
 )
 
-REM Verificar dependencias
-python -c "import fastapi" >nul 2>&1
+REM Deps
+python -c "import PySide6, fastapi" >nul 2>&1
 if errorlevel 1 (
     echo Instalando dependencias por primera vez...
     pip install -r requirements.txt
     if errorlevel 1 (
-        echo ERROR: No se pudieron instalar las dependencias.
+        echo ERROR: pip fallo.
         pause
         exit /b 1
     )
     echo.
 )
 
-REM Verificar certificados HTTPS
-if not exist localhost.pem (
-    echo.
-    echo ============================================
-    echo   ATENCION: No hay certificados HTTPS
-    echo ============================================
-    echo.
-    echo Si tu Odoo esta en HTTPS, el navegador bloqueara las peticiones
-    echo a este proxy por "Mixed Content".
-    echo.
-    echo Para activar HTTPS local, EJECUTAR UNA VEZ:
-    echo   1. Cerrar esta ventana
-    echo   2. Click derecho en setup_https.bat
-    echo   3. Seleccionar "Ejecutar como administrador"
-    echo.
-    echo Si quieres continuar igual en modo HTTP por ahora, presiona una tecla.
-    echo Si quieres cancelar y configurar HTTPS, cerrar esta ventana ahora.
-    echo.
-    pause
-)
+REM Lanzar la GUI. Si se pasa "--daemon" arranca solo el daemon (retrocompat v1.4)
+python -m posprintproxy %*
 
-REM Iniciar el proxy
-echo Iniciando proxy... (Ctrl+C para detener)
-echo.
-python main.py
-
-pause
+if errorlevel 1 pause

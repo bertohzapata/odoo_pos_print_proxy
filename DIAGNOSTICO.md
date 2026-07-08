@@ -24,7 +24,7 @@ arrancar start_proxy.bat). Asi todos parten del mismo punto.
 
 | Campo | Valor |
 |---|---|
-| Alias del equipo | `[ej: laptop-iromochis-tienda1]` |
+| Alias del equipo | `[ej: laptop-tienda1]` |
 | Rol esperado | `[ej: control que funciona / falla con error X / nuevo]` |
 | Fecha del diagnostico | `[YYYY-MM-DD HH:MM]` |
 

@@ -1,0 +1,4 @@
+# Deps solo para desarrollo y build (no van en el installer)
+-r requirements.txt
+
+pyinstaller>=6.6.0

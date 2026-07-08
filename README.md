@@ -1,11 +1,27 @@
 # POS Print Proxy
 
-> Impresion directa en Odoo 19 POS con impresoras termicas USB genericas, sin
-> IoT Box, manteniendo el modo offline del POS.
+> **v2.0** — App nativa Windows con GUI PySide6 para impresion directa en
+> Odoo 19 POS con impresoras termicas USB genericas. Sin IoT Box, sin editar
+> YAML, y manteniendo el modo offline del POS.
 
-Un puente HTTPS local que impersona el protocolo del Odoo IoT Box, permitiendo
-imprimir tickets y comandas directamente desde el navegador hacia cualquier
-impresora termica USB conectada a la PC de la tienda.
+Aplicacion Windows con:
+
+- Dashboard visual para arrancar/detener el proxy en tiempo real
+- Gestion de multiples impresoras (recibos + cocina + bar) desde la GUI
+- Renovacion del certificado HTTPS en un click
+- Visor de logs en vivo con filtros y exportacion
+- Icono en la bandeja del sistema con acciones rapidas
+- Auto-inicio con Windows opcional (sin admin)
+- Auto-actualizacion via GitHub Releases con notificacion
+- Installer `.exe` estandar (detecta version previa y preserva certificados)
+
+Bajo el capo, un puente HTTPS local que impersona el protocolo del Odoo
+IoT Box, imprimiendo tickets y comandas directamente desde el navegador
+hacia cualquier impresora termica USB conectada a la PC de la tienda.
+
+Instalacion: descargar `POSPrintProxySetup-2.0.0.exe` desde
+[Releases](https://github.com/bertohzapata/odoo_pos_print_proxy/releases/latest)
+y doble click. Cero comandos, cero YAML.
 
 ---
 
@@ -65,17 +81,28 @@ Antes:                                Despues:
 
 ## Caracteristicas
 
+**Aplicacion (v2.0)**:
+- **GUI PySide6** con tema oscuro custom (no template AI generico)
+- **System tray** con estado en vivo y acciones rapidas
+- **Renovacion de certificado en un click** desde el dashboard
+- **Editor visual de impresoras** con autodetect de dispositivos Windows
+- **Visor de logs en tiempo real** con filtro por nivel y exportacion
+- **Auto-inicio con Windows** togleable, sin admin
+- **Auto-update** con notificacion nativa cuando hay version nueva
+- **Installer estandar** que preserva certs y config al reinstalar
+- **Uninstaller limpio** que remueve todo excepto los certs del usuario
+
+**Motor de impresion**:
 - **Impresion directa** sin previsualizacion del navegador
 - **Compatible con cualquier impresora termica ESC/POS** (no solo Epson)
 - **Funciona en modo offline del POS** (no depende de internet)
-- **HTTPS local** con certificado de confianza generado automaticamente
-- **Soporte de tickets y comandas de cocina** simultaneo
+- **HTTPS local** con certificado auto-confiable via mkcert
+- **Soporte de tickets, comandas y bar** simultaneo, cada uno en su puerto
 - **Apertura de cajon de dinero** mediante comando estandar ESC/POS
 - **Cero modificaciones a Odoo** — solo configuracion via UI
 - **CORS estricto + Private Network Access** — solo el dominio Odoo configurado puede usarlo
-- **Configurable por tienda** mediante `config.yaml`
-- **Multi-instancia** para tiendas con multiples impresoras
-- **Replicable** para multiples tiendas con el mismo paquete
+- **Multi-impresora** con N puertos independientes
+- **Replicable** para multiples tiendas con el mismo `.exe`
 
 ## Por que HTTPS local y no un tunel al servidor
 

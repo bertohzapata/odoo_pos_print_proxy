@@ -1,0 +1,23 @@
+# =============================================================================
+# POS Print Proxy - Configuracion inicial
+# =============================================================================
+# Este archivo es una plantilla que se copia a %APPDATA%\POSPrintProxy\config.yaml
+# la primera vez que se ejecuta la app. Despues, editalo desde la GUI (pestana
+# Impresoras y Sistema), NO directamente aqui.
+
+# --- Dominio Odoo permitido (CORS) ---
+odoo_domain: "https://tudominio.com"
+
+# --- Logs ---
+verbose: false
+log_dir: "logs"
+log_retention_days: 30
+kill_zombies_on_startup: true
+
+# --- Impresoras (una entrada por dispositivo fisico) ---
+printers:
+  - name: "Caja"
+    port: 8072
+    windows_printer: "POS-80"
+    paper_width: 576
+    role: both

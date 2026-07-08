@@ -1,0 +1,87 @@
+# ============================================================================
+# Python
+# ============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+ENV/
+
+# ============================================================================
+# Build / empaquetado
+# ============================================================================
+build/
+dist/
+dist_installer/
+*.spec.bak
+
+# PyInstaller local artifacts
+POSPrintProxy/
+*.manifest
+installer/bin/mkcert.exe
+installer/app.ico.bak
+
+# ============================================================================
+# Datos generados en tiempo de ejecucion (nunca subir a git)
+# ============================================================================
+logs/
+*.log
+*.log.*
+
+# Certificados y claves (NUNCA subir)
+localhost.pem
+localhost-key.pem
+rootCA.pem
+rootCA-key.pem
+certs/
+*.pfx
+*.p12
+*.key
+!config.yaml.default
+
+# mkcert descargado localmente por el dev
+mkcert.exe
+mkcert
+
+# Config con datos de tienda real (no subir; solo config.yaml.default queda)
+# NOTA: config.yaml SI se trackea para dev, pero deberia tener valores dummy.
+# Si vas a poner dominio o impresora real, mueve tu config a la carpeta ignore.
+
+# ============================================================================
+# WSL / OneDrive basura
+# ============================================================================
+*:Zone.Identifier
+Zone.Identifier
+Thumbs.db
+Desktop.ini
+
+# ============================================================================
+# IDEs
+# ============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================================================
+# Tests locales / temporales
+# ============================================================================
+/tmp/
+test_config.yaml
+gui_*.png
+
+# Carpeta de diagnosticos con datos reales de las tiendas (hostnames, certs,
+# dominios). Los archivos DIAGNOSTICO.md (plantilla) SI se trackean; los
+# diagnosticos completados por equipo NO.
+diagosticos/

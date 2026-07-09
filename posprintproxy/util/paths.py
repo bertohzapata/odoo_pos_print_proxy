@@ -91,6 +91,17 @@ def logs_dir() -> Path:
     return path
 
 
+def debug_dir() -> Path:
+    """
+    Carpeta donde se guardan las impresiones para diagnostico cuando el
+    modo debug esta activo. Los archivos NO se rotan; el usuario los
+    borra manualmente.
+    """
+    path = app_data_dir() / "debug"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def default_config_template() -> Path:
     """Plantilla de config.yaml para primera ejecucion (dentro del install)."""
     return install_dir() / "config.yaml.default"

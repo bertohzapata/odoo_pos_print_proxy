@@ -81,6 +81,7 @@ class ConfigController(QObject):
             "log_dir": config.log_dir,
             "log_retention_days": config.log_retention_days,
             "kill_zombies_on_startup": config.kill_zombies_on_startup,
+            "debug_save_prints": config.debug_save_prints,
             "printers": [
                 {
                     "name": p.name,
@@ -101,35 +102,33 @@ class ConfigController(QObject):
 
     # --- Helpers de mutacion (para la UI) ---
 
-    def with_odoo_domain(self, domain: str) -> AppConfig:
+    def _clone_current(self, **overrides) -> AppConfig:
+        """
+        Devuelve una AppConfig con todos los campos de la actual salvo los
+        indicados en overrides. Centraliza la construccion para no olvidar
+        campos nuevos al agregarlos al dataclass.
+        """
         cur = self.current()
-        return AppConfig(
-            odoo_domain=domain,
-            printers=list(cur.printers),
-            verbose=cur.verbose,
-            log_dir=cur.log_dir,
-            log_retention_days=cur.log_retention_days,
-            kill_zombies_on_startup=cur.kill_zombies_on_startup,
-        )
+        fields = {
+            "odoo_domain": cur.odoo_domain,
+            "printers": list(cur.printers),
+            "verbose": cur.verbose,
+            "log_dir": cur.log_dir,
+            "log_retention_days": cur.log_retention_days,
+            "kill_zombies_on_startup": cur.kill_zombies_on_startup,
+            "debug_save_prints": cur.debug_save_prints,
+        }
+        fields.update(overrides)
+        return AppConfig(**fields)
+
+    def with_odoo_domain(self, domain: str) -> AppConfig:
+        return self._clone_current(odoo_domain=domain)
 
     def with_printers(self, printers: list[PrinterConfig]) -> AppConfig:
-        cur = self.current()
-        return AppConfig(
-            odoo_domain=cur.odoo_domain,
-            printers=printers,
-            verbose=cur.verbose,
-            log_dir=cur.log_dir,
-            log_retention_days=cur.log_retention_days,
-            kill_zombies_on_startup=cur.kill_zombies_on_startup,
-        )
+        return self._clone_current(printers=printers)
 
     def with_verbose(self, verbose: bool) -> AppConfig:
-        cur = self.current()
-        return AppConfig(
-            odoo_domain=cur.odoo_domain,
-            printers=list(cur.printers),
-            verbose=verbose,
-            log_dir=cur.log_dir,
-            log_retention_days=cur.log_retention_days,
-            kill_zombies_on_startup=cur.kill_zombies_on_startup,
-        )
+        return self._clone_current(verbose=verbose)
+
+    def with_debug(self, debug_save_prints: bool) -> AppConfig:
+        return self._clone_current(debug_save_prints=debug_save_prints)

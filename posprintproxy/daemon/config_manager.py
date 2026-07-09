@@ -76,6 +76,9 @@ class AppConfig:
     log_dir: str = "logs"
     log_retention_days: int = 30
     kill_zombies_on_startup: bool = True
+    # Cuando True, guardar cada JPEG entrante como archivo en la carpeta
+    # debug/ para diagnostico. NO se rota; el usuario borra manualmente.
+    debug_save_prints: bool = False
 
     @property
     def allowed_origin(self) -> str:
@@ -110,6 +113,7 @@ def _parse(raw: dict) -> AppConfig:
     log_dir = raw.get("log_dir", "logs")
     log_retention_days = int(raw.get("log_retention_days", 30))
     kill_zombies = bool(raw.get("kill_zombies_on_startup", True))
+    debug_save_prints = bool(raw.get("debug_save_prints", False))
 
     # Detectar formato: nuevo (con 'printers') o legacy
     printers_raw = raw.get("printers")
@@ -150,6 +154,7 @@ def _parse(raw: dict) -> AppConfig:
         log_dir=log_dir,
         log_retention_days=log_retention_days,
         kill_zombies_on_startup=kill_zombies,
+        debug_save_prints=debug_save_prints,
     )
 
 

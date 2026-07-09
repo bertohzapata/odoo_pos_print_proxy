@@ -9,13 +9,13 @@
 
 ## Estado actual
 
-- **Version**: 2.0.1
+- **Version**: 2.0.2
 - **Ultima actualizacion**: 2026-07-08
-- **Resumen**: v2.0.1 corrige tres bugs de primer arranque en produccion
-  encontrados al probar el installer real: (1) uvicorn fallando por
-  `sys.stdout=None` en PyInstaller windowed, (2) `netstat -ano` con
-  timeout muy corto congelando la GUI, (3) subprocess flasheando ventanas
-  CMD por falta de CREATE_NO_WINDOW.
+- **Resumen**: v2.0.2 introduce el modulo Odoo custom
+  `pos_offline_print_safe` que arregla el bug de fondo (offline degradado
+  hacia que el ticket no imprimiera aunque el pago se hubiera cobrado),
+  y agrega modo debug al proxy que guarda cada JPEG entrante como
+  archivo para diagnostico.
 
 Fase 2 completada. App GUI nativa PySide6 con dashboard, gestion
   de impresoras, visor de logs en tiempo real, gestor de certificado con
@@ -30,6 +30,63 @@ Fase 2 completada. App GUI nativa PySide6 con dashboard, gestion
 ---
 
 ## Hitos completados
+
+### v2.0.2 — Modulo Odoo pos_offline_print_safe + modo debug del proxy
+
+Al probar v2.0.1 en produccion aparecio un bug muy especifico: pago
+offline con tarjeta no imprimia, efectivo a veces si a veces no, y a
+veces el ticket "impreso" mostraba contenido de un pago anterior.
+
+Investigacion:
+
+- Los cortes de internet en tienda raramente son limpios; suelen ser
+  degradaciones (WiFi debil, servidor lento, sesion expirada, etc.)
+- `addons/point_of_sale/static/src/app/utils/order_payment_validation.js:223-234`
+  trata dos tipos de error del sync de forma opuesta:
+  - `ConnectionLostError` (sin red) => imprime el ticket, marca orden `paid`
+  - `RPCError` (respuesta 4xx/5xx del servidor) => vuelve orden a `draft`,
+    NO imprime
+- La mayoria de cortes en produccion producen `RPCError`, no
+  `ConnectionLostError`. Por eso el ticket no salia.
+
+Fix:
+
+- **Modulo Odoo custom `pos_offline_print_safe`** (~40 lineas): patch de
+  `OrderPaymentValidation.handleValidationError` que trata `RPCError`
+  como `ConnectionLostError` en el flujo de impresion. La orden queda en
+  `paid` (que es la realidad), el ticket se imprime, y el sync se
+  reintenta despues via la cola `unsyncData` que Odoo ya tiene.
+- Vive en `custom_addons/pos_offline_print_safe/` del repo del proxy.
+  Instalacion: copiar al addons_path del Odoo, reiniciar, instalar
+  desde Apps.
+
+- **Modo debug del proxy** (Componente 2): toggle en la vista Sistema
+  que activa guardado de cada JPEG entrante en
+  `%APPDATA%\POSPrintProxy\debug\{timestamp}_p{puerto}_{nombre}_{seq}.jpg`
+  + metadata JSON al lado. Sirve como red de seguridad para diagnosticar
+  casos raros que persistan y para captura de soporte futuro.
+- El toggle se aplica **en caliente** (sin reiniciar el daemon) porque
+  el handler usa un getter que lee del `self.config` del daemon en cada
+  request.
+- Config field nuevo: `debug_save_prints: bool = False` en `AppConfig`.
+- Default OFF (los archivos consumen disco hasta que el usuario los borre).
+
+Archivos modificados en el proxy:
+- `posprintproxy/util/paths.py`: helper `debug_dir()`
+- `posprintproxy/daemon/config_manager.py`: campo `debug_save_prints`
+- `posprintproxy/daemon/proxy_server.py`: helper `_save_debug_print` +
+  parametro `debug_save_getter` en `create_app`
+- `posprintproxy/daemon/daemon.py`: pasa el lambda al `create_app`
+- `posprintproxy/gui/controllers/config_ctrl.py`: refactor de
+  `_clone_current` + helper `with_debug`
+- `posprintproxy/gui/views/system_view.py`: nueva seccion "Diagnostico
+  avanzado" con toggle + boton "Abrir carpeta debug"
+
+Nuevos archivos:
+- `custom_addons/pos_offline_print_safe/__init__.py`
+- `custom_addons/pos_offline_print_safe/__manifest__.py`
+- `custom_addons/pos_offline_print_safe/README.md`
+- `custom_addons/pos_offline_print_safe/static/src/overrides/order_payment_validation.js`
 
 ### v2.0.1 — Fixes de primer arranque en produccion
 

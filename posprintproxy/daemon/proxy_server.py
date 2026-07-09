@@ -8,12 +8,19 @@ IoT Box de Odoo. Cada instancia:
 - Dispatcha las impresiones a su Printer especifico
 """
 import asyncio
+import base64
+import binascii
+import datetime as _dt
+import itertools
+import json
 import logging
 from contextlib import asynccontextmanager
+from typing import Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, JSONResponse, Response
 
+from ..util.paths import debug_dir
 from .printer_backend import list_printers
 from .printer_manager import Printer
 
@@ -47,11 +54,79 @@ def _jsonrpc_response(result, request_id=None) -> JSONResponse:
     })
 
 
-def create_app(printer: Printer, allowed_origin: str) -> FastAPI:
-    """Fabrica una FastAPI dedicada a una impresora."""
+# Contador atomico para desambiguar impresiones que llegan en el mismo segundo.
+_debug_counter = itertools.count()
+
+
+def _save_debug_print(
+    receipt_b64: str,
+    printer_name: str,
+    port: int,
+    origin: str,
+    action: str,
+) -> None:
+    """
+    Guarda una copia del JPEG entrante + metadata JSON en la carpeta debug.
+    Cualquier error se loggea pero no se propaga: el debug NUNCA debe
+    bloquear la impresion real.
+    """
+    try:
+        # Decodificar base64 (tolerar padding faltante y URL-safe)
+        try:
+            img_bytes = base64.b64decode(receipt_b64, validate=False)
+        except binascii.Error:
+            logger.warning("[debug] base64 invalido; se salta el guardado")
+            return
+
+        ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        seq = next(_debug_counter)
+        # Sanitizar el nombre de la impresora para el filename
+        safe_printer = "".join(c if c.isalnum() or c in "._-" else "_" for c in printer_name)
+
+        base_name = f"{ts}_p{port}_{safe_printer}_{seq:04d}"
+        target_dir = debug_dir()
+        img_path = target_dir / f"{base_name}.jpg"
+        meta_path = target_dir / f"{base_name}.json"
+
+        img_path.write_bytes(img_bytes)
+
+        meta = {
+            "timestamp_iso": _dt.datetime.now().isoformat(),
+            "printer_name": printer_name,
+            "port": port,
+            "action": action,
+            "origin": origin,
+            "size_bytes": len(img_bytes),
+            "seq": seq,
+        }
+        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        logger.info(f"[debug] Guardado {img_path.name} ({len(img_bytes)} bytes)")
+    except Exception as e:
+        # Debug NUNCA debe romper la impresion real.
+        logger.warning(f"[debug] Error guardando print: {e}")
+
+
+def create_app(
+    printer: Printer,
+    allowed_origin: str,
+    debug_save_getter: Callable[[], bool] = lambda: False,
+    port: int = 0,
+) -> FastAPI:
+    """
+    Fabrica una FastAPI dedicada a una impresora.
+
+    Args:
+        printer: instancia de Printer con logica de impresion
+        allowed_origin: dominio Odoo permitido para CORS
+        debug_save_getter: callable que retorna True si se debe guardar
+            cada impresion como archivo. Se lee en cada request para
+            reflejar cambios en caliente del toggle de la GUI.
+        port: puerto de la instancia (solo para nombres de archivos debug)
+    """
     app = FastAPI(
         title=f"POS Print Proxy - {printer.name}",
-        version="2.0.0",
+        version="2.0.2",
         lifespan=_lifespan,
     )
 
@@ -137,6 +212,22 @@ def create_app(printer: Printer, allowed_origin: str) -> FastAPI:
                 if not receipt_b64:
                     logger.warning(f"[{printer.name}] print_receipt sin datos de imagen")
                     return _jsonrpc_response(False, request_id)
+
+                # Debug: guardar copia del JPEG entrante si el toggle esta activo.
+                # El helper es tolerante a fallos: si algo revienta, se loggea
+                # pero la impresion real continua.
+                try:
+                    if debug_save_getter():
+                        _save_debug_print(
+                            receipt_b64=receipt_b64,
+                            printer_name=printer.name,
+                            port=port,
+                            origin=request.headers.get("origin", ""),
+                            action=action,
+                        )
+                except Exception as e:
+                    logger.warning(f"[{printer.name}] debug getter fallo: {e}")
+
                 printer.print_receipt(receipt_b64)
                 return _jsonrpc_response(True, request_id)
 

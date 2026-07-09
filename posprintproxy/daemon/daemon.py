@@ -265,7 +265,15 @@ class ProxyDaemon:
             )
             detect_or_warn(printer)
 
-            app = create_app(printer, self.config.allowed_origin)
+            # Pasamos un getter para que el toggle debug se propague en caliente
+            # sin reiniciar el daemon (self.config apunta a la config actual y
+            # update_config() la reemplaza en vivo).
+            app = create_app(
+                printer,
+                self.config.allowed_origin,
+                debug_save_getter=lambda: self.config.debug_save_prints,
+                port=printer_cfg.port,
+            )
 
             uv_cfg = uvicorn.Config(
                 app,

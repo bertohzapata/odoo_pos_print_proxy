@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from ... import __version__
 from ...util import autostart
-from ...util.paths import logs_dir, app_data_dir
+from ...util.paths import logs_dir, app_data_dir, debug_dir
 from ..controllers.config_ctrl import ConfigController
 from ..controllers.update_ctrl import UpdateController, UpdateInfo
 
@@ -102,6 +102,39 @@ class SystemView(QWidget):
 
         root.addWidget(log_box)
 
+        # --- Diagnostico avanzado (debug) ---
+        debug_box = QGroupBox("Diagnostico avanzado")
+        debug_layout = QVBoxLayout(debug_box)
+        debug_layout.setContentsMargins(20, 22, 20, 20)
+        debug_layout.setSpacing(10)
+
+        self.debug_check = QCheckBox(
+            "Guardar cada impresion como archivo (para diagnostico)"
+        )
+        debug_layout.addWidget(self.debug_check)
+
+        debug_hint = QLabel(
+            "Cuando esta activo, el proxy guarda una copia de cada JPEG que "
+            "llega en la carpeta debug junto a un JSON con metadata. Sirve "
+            "para verificar exactamente que imagen envio Odoo cuando hay "
+            "un problema. Los archivos ocupan disco hasta que los borres "
+            "manualmente. Solo actives esto durante un diagnostico."
+        )
+        debug_hint.setObjectName("Muted")
+        debug_hint.setWordWrap(True)
+        debug_layout.addWidget(debug_hint)
+
+        debug_buttons = QHBoxLayout()
+        self.btn_open_debug = QPushButton("Abrir carpeta debug")
+        self.btn_save_debug = QPushButton("Guardar cambio")
+        self.btn_save_debug.setObjectName("Primary")
+        debug_buttons.addWidget(self.btn_open_debug)
+        debug_buttons.addStretch(1)
+        debug_buttons.addWidget(self.btn_save_debug)
+        debug_layout.addLayout(debug_buttons)
+
+        root.addWidget(debug_box)
+
         # --- Actualizaciones ---
         upd_box = QGroupBox("Actualizaciones")
         upd_layout = QVBoxLayout(upd_box)
@@ -135,6 +168,8 @@ class SystemView(QWidget):
         self.btn_open_logs.clicked.connect(lambda: self._open_folder(logs_dir()))
         self.btn_open_data.clicked.connect(lambda: self._open_folder(app_data_dir()))
         self.btn_save_log_settings.clicked.connect(self._save_log_settings)
+        self.btn_open_debug.clicked.connect(lambda: self._open_folder(debug_dir()))
+        self.btn_save_debug.clicked.connect(self._save_debug_setting)
         self.btn_check_now.clicked.connect(self.update_ctrl.check_now)
         self.btn_open_release.clicked.connect(self._open_release)
         self.update_ctrl.check_finished.connect(self._render_update_info)
@@ -145,6 +180,7 @@ class SystemView(QWidget):
         cfg = self.config_ctrl.current()
         self.verbose_check.setChecked(cfg.verbose)
         self.retention_spin.setValue(cfg.log_retention_days)
+        self.debug_check.setChecked(cfg.debug_save_prints)
 
         cmd = autostart.current_command()
         self.autostart_check.setChecked(cmd is not None and cmd != "")
@@ -196,12 +232,27 @@ class SystemView(QWidget):
             log_dir=cfg.log_dir,
             log_retention_days=self.retention_spin.value(),
             kill_zombies_on_startup=cfg.kill_zombies_on_startup,
+            debug_save_prints=cfg.debug_save_prints,
         )
         if self.config_ctrl.update(new_cfg):
             QMessageBox.information(
                 self, "Ajustes guardados",
                 "Los cambios se aplicaran al reiniciar el daemon.",
             )
+
+    def _save_debug_setting(self) -> None:
+        """Guarda el toggle de debug. El cambio se aplica EN CALIENTE
+        (sin reiniciar el daemon) porque el handler lee el flag en cada request.
+        """
+        enabled = self.debug_check.isChecked()
+        new_cfg = self.config_ctrl.with_debug(enabled)
+        if self.config_ctrl.update(new_cfg):
+            msg = (
+                "Modo debug activado. Cada impresion se guardara en la carpeta debug."
+                if enabled
+                else "Modo debug desactivado. No se guardaran mas archivos."
+            )
+            QMessageBox.information(self, "Debug", msg)
 
     def _open_folder(self, path: Path) -> None:
         try:

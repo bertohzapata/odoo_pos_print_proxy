@@ -80,6 +80,9 @@ Desktop.ini
 /tmp/
 test_config.yaml
 gui_*.png
+# Trabajos capturados por tools/fake_9100_printer.py (impresora simulada)
+captures/
+*.escpos
 
 # Carpeta de diagnosticos con datos reales de las tiendas (hostnames, certs,
 # dominios). Los archivos DIAGNOSTICO.md (plantilla) SI se trackean; los

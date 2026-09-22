@@ -37,6 +37,7 @@ import yaml
 
 
 VALID_ROLES = {"receipt", "kitchen", "bar", "both"}
+VALID_CONNECTIONS = {"usb", "network"}
 
 
 @dataclass
@@ -44,9 +45,15 @@ class PrinterConfig:
     """Configuracion de una impresora individual."""
     name: str
     port: int
-    windows_printer: str
+    windows_printer: str = ""
     paper_width: int = 576
     role: str = "both"
+    # Transporte hacia la impresora fisica:
+    #   "usb"     -> spooler de Windows por nombre (windows_printer)
+    #   "network" -> socket TCP crudo ESC/POS a host:tcp_port (puerto 9100)
+    connection: str = "usb"
+    host: str = ""          # solo network: IP/hostname de la impresora
+    tcp_port: int = 9100    # solo network: puerto TCP (JetDirect/RAW)
 
     def __post_init__(self):
         if not isinstance(self.port, int) or not (1 <= self.port <= 65535):
@@ -54,10 +61,25 @@ class PrinterConfig:
                 f"Puerto invalido en impresora '{self.name}': {self.port} "
                 f"(debe ser entero entre 1 y 65535)"
             )
-        if not self.windows_printer:
+        if self.connection not in VALID_CONNECTIONS:
             raise ValueError(
-                f"Impresora '{self.name}' no tiene 'windows_printer' configurado"
+                f"Impresora '{self.name}': connection '{self.connection}' invalido "
+                f"(validos: {sorted(VALID_CONNECTIONS)})"
             )
+        if self.connection == "network":
+            if not self.host:
+                raise ValueError(
+                    f"Impresora de red '{self.name}' no tiene 'host' (IP) configurado"
+                )
+            if not isinstance(self.tcp_port, int) or not (1 <= self.tcp_port <= 65535):
+                raise ValueError(
+                    f"Impresora '{self.name}': tcp_port invalido: {self.tcp_port}"
+                )
+        else:  # usb
+            if not self.windows_printer:
+                raise ValueError(
+                    f"Impresora USB '{self.name}' no tiene 'windows_printer' configurado"
+                )
         if self.role not in VALID_ROLES:
             # Warning, no error: el role es informativo, no bloqueante
             print(
@@ -163,12 +185,20 @@ def _parse_printer(raw: dict) -> PrinterConfig:
     if not isinstance(raw, dict):
         raise ValueError(f"Cada impresora debe ser un mapeo/dict, no {type(raw).__name__}")
 
+    # host acepta alias 'printer_ip'. Si hay host y no se especifico connection,
+    # se infiere "network" (comodidad: basta poner la IP).
+    host = str(raw.get("host") or raw.get("printer_ip") or "")
+    connection = str(raw.get("connection") or ("network" if host else "usb")).lower()
+
     return PrinterConfig(
-        name=str(raw.get("name") or raw.get("windows_printer") or "Sin nombre"),
+        name=str(raw.get("name") or raw.get("windows_printer") or host or "Sin nombre"),
         port=int(raw.get("port", 8072)),
         windows_printer=str(raw.get("windows_printer") or raw.get("printer_name") or ""),
         paper_width=int(raw.get("paper_width", 576)),
         role=str(raw.get("role", "both")),
+        connection=connection,
+        host=host,
+        tcp_port=int(raw.get("tcp_port") or raw.get("printer_port") or 9100),
     )
 
 

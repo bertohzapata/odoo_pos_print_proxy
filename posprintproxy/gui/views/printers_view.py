@@ -76,7 +76,7 @@ class PrintersView(QWidget):
         # --- Tabla ---
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([
-            "Nombre", "Puerto", "Impresora Windows", "Ancho", "Rol",
+            "Nombre", "Puerto", "Destino (USB / Red)", "Ancho", "Rol",
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.horizontalHeader().setStretchLastSection(False)
@@ -134,7 +134,11 @@ class PrintersView(QWidget):
     def _fill_row(self, row: int, p: PrinterConfig) -> None:
         self.table.setItem(row, 0, QTableWidgetItem(p.name))
         self.table.setItem(row, 1, QTableWidgetItem(str(p.port)))
-        self.table.setItem(row, 2, QTableWidgetItem(p.windows_printer))
+        if p.connection == "network":
+            dest = f"🌐 {p.host}:{p.tcp_port}"
+        else:
+            dest = f"🖶 {p.windows_printer}"
+        self.table.setItem(row, 2, QTableWidgetItem(dest))
         width_label = "80mm" if p.paper_width == 576 else "58mm" if p.paper_width == 384 else f"{p.paper_width}px"
         self.table.setItem(row, 3, QTableWidgetItem(width_label))
         self.table.setItem(row, 4, QTableWidgetItem(p.role))

@@ -15,9 +15,25 @@ log_retention_days: 30
 kill_zombies_on_startup: true
 
 # --- Impresoras (una entrada por dispositivo fisico) ---
+# Cada impresora puede ser:
+#   - USB   : se envia al spooler de Windows por nombre (windows_printer)
+#   - RED   : se envia por socket TCP crudo (ESC/POS) a host:tcp_port (9100)
+# La impresora de red NO depende de esta PC: cualquier equipo de la LAN puede
+# imprimirle. Basta poner 'host'; 'connection: network' se infiere solo.
 printers:
+  # Ejemplo USB (spooler de Windows)
   - name: "Caja"
     port: 8072
+    connection: usb
     windows_printer: "POS-80"
     paper_width: 576
-    role: both
+    role: receipt
+
+  # Ejemplo RED (impresora Ethernet con IP fija, puerto 9100)
+  - name: "Cocina"
+    port: 8073
+    connection: network       # opcional: se infiere 'network' si hay 'host'
+    host: "192.168.1.50"      # IP fija de la impresora (alias: printer_ip)
+    tcp_port: 9100            # puerto RAW/JetDirect (default 9100)
+    paper_width: 576
+    role: kitchen

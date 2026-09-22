@@ -82,16 +82,7 @@ class ConfigController(QObject):
             "log_retention_days": config.log_retention_days,
             "kill_zombies_on_startup": config.kill_zombies_on_startup,
             "debug_save_prints": config.debug_save_prints,
-            "printers": [
-                {
-                    "name": p.name,
-                    "port": p.port,
-                    "windows_printer": p.windows_printer,
-                    "paper_width": p.paper_width,
-                    "role": p.role,
-                }
-                for p in config.printers
-            ],
+            "printers": [self._printer_to_dict(p) for p in config.printers],
         }
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         # Escribir a archivo temporal y renombrar (atomico en Windows y Linux)
@@ -99,6 +90,23 @@ class ConfigController(QObject):
         with open(tmp, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
         tmp.replace(self.config_path)
+
+    @staticmethod
+    def _printer_to_dict(p: PrinterConfig) -> dict:
+        """Serializa una impresora a dict YAML, incluyendo campos de red."""
+        d = {
+            "name": p.name,
+            "port": p.port,
+            "connection": p.connection,
+            "paper_width": p.paper_width,
+            "role": p.role,
+        }
+        if p.connection == "network":
+            d["host"] = p.host
+            d["tcp_port"] = p.tcp_port
+        else:
+            d["windows_printer"] = p.windows_printer
+        return d
 
     # --- Helpers de mutacion (para la UI) ---
 

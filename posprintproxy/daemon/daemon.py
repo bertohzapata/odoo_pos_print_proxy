@@ -262,6 +262,9 @@ class ProxyDaemon:
                 windows_printer=printer_cfg.windows_printer,
                 paper_width=printer_cfg.paper_width,
                 role=printer_cfg.role,
+                connection=printer_cfg.connection,
+                host=printer_cfg.host,
+                tcp_port=printer_cfg.tcp_port,
             )
             detect_or_warn(printer)
 

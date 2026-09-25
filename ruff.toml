@@ -1,0 +1,8 @@
+# Config de lint del proyecto (puerta del arnes SDD). Reglas minimas y estables:
+# errores reales (F) y de sintaxis/estilo grave (E4/E7/E9). Ver AGENTS.md §3.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["harness/.sandbox", "installer/build", "installer/dist"]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

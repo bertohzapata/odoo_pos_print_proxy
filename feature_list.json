@@ -1,0 +1,8 @@
+{
+  "_comentario": "Fuente canonica del backlog y del estado del ciclo. NO se edita a mano: toda mutacion pasa por harness/scripts/estado.sh. Ver AGENTS.md.",
+  "schema": 1,
+  "feature_activa": null,
+  "features": [],
+  "flujo_default": "light",
+  "flujo_preguntar": "si"
+}

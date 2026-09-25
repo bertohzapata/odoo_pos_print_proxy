@@ -88,3 +88,9 @@ captures/
 # dominios). Los archivos DIAGNOSTICO.md (plantilla) SI se trackean; los
 # diagnosticos completados por equipo NO.
 diagosticos/
+
+# Arnes SDD: sandbox de test-env.sh
+harness/.sandbox/
+
+# Respaldos de sdd-init (modo actualizar)
+.sdd-backup-*/

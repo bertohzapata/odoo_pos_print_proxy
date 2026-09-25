@@ -6,7 +6,7 @@
 
 ## Linea de version
 
-<Rama de integracion destino: odoo_v19 (default) | odoo_v20 ... Si necesita un addon Odoo, en que repo va.>
+<Rama de integracion: main (unica). Versiones de Odoo que toca (19, 20...) y que no debe romper. Si necesita un addon Odoo, en que repo va.>
 
 ## Que hace falta
 

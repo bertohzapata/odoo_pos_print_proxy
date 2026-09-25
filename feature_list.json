@@ -2,7 +2,48 @@
   "_comentario": "Fuente canonica del backlog y del estado del ciclo. NO se edita a mano: toda mutacion pasa por harness/scripts/estado.sh. Ver AGENTS.md.",
   "schema": 1,
   "feature_activa": null,
-  "features": [],
+  "features": [
+    {
+      "id": "001",
+      "titulo": "Protocolo ePOS para Odoo 20 en el daemon",
+      "tipo": "actualizacion",
+      "flujo": "estandar",
+      "modulo": "daemon",
+      "estado": "backlog",
+      "prioridad": 1,
+      "depende_de": [],
+      "brief": "backlog/001-protocolo-epos-para-odoo-20-en-el-daemon.md",
+      "spec_dir": null,
+      "rama": null,
+      "tarea_actual": null,
+      "bloqueo": null,
+      "notas": "F1 del plan multi-versión. Constitución v2.0.0 (Principio III). Addon de cocina offline para Odoo 20 queda en F2, en el repo de Odoo 20.",
+      "validaciones": [],
+      "creada": "2026-09-25T05:17:39Z",
+      "actualizada": "2026-09-25T05:17:39Z"
+    },
+    {
+      "id": "002",
+      "titulo": "GUI multi-versión: datos para Odoo 20, estado y autodiagnóstico",
+      "tipo": "actualizacion",
+      "flujo": "light",
+      "modulo": "gui",
+      "estado": "backlog",
+      "prioridad": 2,
+      "depende_de": [
+        "001"
+      ],
+      "brief": "backlog/002-gui-multi-versi-n-datos-para-odoo-20-est.md",
+      "spec_dir": null,
+      "rama": null,
+      "tarea_actual": null,
+      "bloqueo": null,
+      "notas": "F1 del plan multi-versión; GUI mínima, sin rediseño (el rediseño UI/UX es F2).",
+      "validaciones": [],
+      "creada": "2026-09-25T05:17:42Z",
+      "actualizada": "2026-09-25T05:17:42Z"
+    }
+  ],
   "flujo_default": "light",
   "flujo_preguntar": "si"
 }

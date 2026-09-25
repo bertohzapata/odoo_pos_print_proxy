@@ -10,6 +10,6 @@ Datos rápidos:
 - Pruebas: `harness/scripts/test-env.sh probar app`; sandbox con impresora 9100 simulada:
   `harness/scripts/test-env.sh levantar` (proxy en `:8172`, porque el Odoo local de Docker usa `:8072`).
 - Lint: `harness/scripts/lint.sh` (solo archivos cambiados vs la rama de integración).
-- Ramas: una línea por versión de Odoo (`odoo_v19` hoy). Los addons Odoo van en el repo de su
+- Ramas: una sola línea `main` para Odoo 19 y 20 (constitución III). Los addons Odoo van en el repo de su
   versión (`~/odoo19_community/ixim_addons/`), no aquí.
 - Historia y roadmap: `HITOS.md`; definición de la app: `ESPECIFICACIONES.md`.

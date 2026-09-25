@@ -284,16 +284,15 @@ se verifica leyendo `proxy_server.py` y el código de Odoo de la versión objeti
 
 ## 9. Reglas transversales
 
-- **Ramas por versión de Odoo:** la rama de integración es la línea de la versión objetivo:
-  hoy **`odoo_v19`**; cuando se soporte Odoo 20 nacerá `odoo_v20` (desde `odoo_v19`) y cada
-  feature declara en su brief a qué línea va. Antes de `/speckit-specify` se hace checkout de
-  esa rama: Spec Kit crea `NNN-slug` desde HEAD. Se fusiona de vuelta a esa misma rama con
-  `--no-ff`. Un fix que aplique a varias líneas se hace en la más vieja y se lleva a las demás
-  con cherry-pick, documentado en `research.md`. `harness/scripts/lint.sh` compara contra
-  `PPP_BASE_BRANCH` (default `odoo_v19`).
-- **Commits:** prefijos convencionales en español (`feat:`, `fix:`, `docs:`, `chore:`), y
-  versión en `posprintproxy/util/version.py` + `HITOS.md` al liberar. Los commits asistidos
-  llevan la línea `Co-Authored-By` del modelo.
+- **Una sola línea para todas las versiones de Odoo** (constitución, Principio III): la rama de
+  integración es **`main`** y soporta a la vez Odoo 19 (protocolo IoT Box) y Odoo 20 (protocolo
+  Epson ePOS). Cada feature declara en su brief qué versiones de Odoo toca. Antes de
+  `/speckit-specify` se hace checkout de `main`: Spec Kit crea `NNN-slug` desde HEAD. Se fusiona
+  de vuelta a `main` con `--no-ff`. `harness/scripts/lint.sh` compara contra `PPP_BASE_BRANCH`
+  (default `main`).
+- **Commits:** Conventional Commits en español (`feat:`, `fix:`, `docs:`, `chore:`,
+  `refactor:`, `test:`), y versión en `posprintproxy/util/version.py` + `HITOS.md` al liberar.
+  **Nunca** llevan líneas `Co-Authored-By` de modelos de IA (constitución, Cierre).
 - **Lint:** `harness/scripts/lint.sh` corre ruff (config `ruff.toml`) **solo sobre los `.py`
   que cambia la feature**; la deuda heredada (`lint.sh --todo`) no bloquea el ciclo.
 - **Lo que solo el propietario puede validar**: impresora física real, Windows real (GUI,

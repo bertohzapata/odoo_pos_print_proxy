@@ -8,8 +8,8 @@ RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$RAIZ"
 RUFF="$RAIZ/.venv/bin/ruff"
 [ -x "$RUFF" ] || "$RAIZ/.venv/bin/python" -m pip install -q "ruff>=0.6"
-# Rama de integracion = linea de version de Odoo activa (odoo_v19, odoo_v20...).
-BASE="${PPP_BASE_BRANCH:-odoo_v19}"
+# Rama de integracion unica (main) para todas las versiones de Odoo soportadas.
+BASE="${PPP_BASE_BRANCH:-main}"
 
 if [ "${1:-}" = "--todo" ]; then
   exec "$RUFF" check posprintproxy tests tools

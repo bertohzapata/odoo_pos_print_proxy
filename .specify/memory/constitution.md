@@ -1,3 +1,22 @@
+<!--
+Sync Impact Report
+- Versión: 1.0.0 → 2.0.0 (MAJOR: se redefine el Principio III y el modelo de ramas de forma
+  incompatible con la regla anterior de "una rama por versión de Odoo").
+- Principios modificados:
+  - III. "Contrato con el POS de Odoo por Versión" → "Contratos por Versión de Odoo en una Sola Línea"
+- Secciones modificadas: Restricciones Técnicas (Prohibido), Flujo de Desarrollo → Modelo de
+  ramas, Cierre → Commits.
+- Secciones añadidas: ninguna. Secciones eliminadas: ninguna.
+- Motivo: Odoo 19 y 20 conviven a largo plazo en las tiendas; Odoo 20 Community ya no tiene
+  cliente IoT Box y solo imprime por Epson ePOS. Una rama por versión duplicaría GUI, backend e
+  installer, y el auto-update (`releases/latest` de un solo repo) llevaría tiendas de 19 a builds
+  solo de 20.
+- Plan de migración: renombrar `odoo_v19` → `main` (local y remoto, con confirmación del
+  propietario); `harness/scripts/lint.sh` PPP_BASE_BRANCH → `main`; AGENTS.md §9 y CLAUDE.md
+  alineados en el mismo cambio. Tags v2.0.x y canal de releases no cambian.
+- Plantillas dependientes: sin cambios (leen la constitución en tiempo de ejecución).
+- TODOs diferidos: ninguno.
+-->
 # POS Print Proxy Constitution
 
 ## Core Principles
@@ -35,12 +54,20 @@ nunca como hecho.
 **Rationale**: el propietario perdió confianza cuando se afirmó que el proxy "preservaba el modo
 offline" sin validarlo. Un supuesto marcado cuesta una línea; uno escondido cuesta una tienda.
 
-### III. Contrato con el POS de Odoo por Versión
+### III. Contratos por Versión de Odoo en una Sola Línea
 
-El contrato HTTP que consume el POS (`/hw_proxy/*`, CORS/PNA, formatos de imagen) es por versión
-de Odoo y vive en la rama de esa versión (`odoo_v19`, `odoo_v20`...). Un cambio al contrato MUST
-citar el código JS de Odoo de esa versión que lo consume. Los addons Odoo de apoyo MUST vivir en
-el repo de su versión (hoy `odoo19_community/ixim_addons/`), no en este repo.
+Una sola base de código e installer atiende todas las versiones de Odoo soportadas (hoy 19 y 20).
+El contrato HTTP que consume el POS es por versión y MUST vivir en su propio módulo de protocolo
+dentro de `posprintproxy/daemon/` (IoT Box `/hw_proxy/*` para Odoo 19; Epson ePOS
+`/cgi-bin/epos/service.cgi` para Odoo 20), aislado de los demás.
+
+- Un cambio a un contrato MUST citar el código JS de Odoo de **esa** versión que lo consume.
+- Añadir o cambiar un protocolo MUST NOT romper los otros: cada protocolo conserva sus pruebas
+  y toda entrega verifica la regresión de las versiones ya soportadas.
+- La lógica compartida (raster ESC/POS, transporte USB/red, config, GUI) no depende de ningún
+  protocolo concreto.
+- Los addons Odoo de apoyo MUST vivir en el repo de su versión de Odoo (hoy
+  `~/odoo19_community/ixim_addons/` para 19), no en este repo.
 
 ### IV. La Impresión No Se Pierde
 
@@ -60,14 +87,15 @@ doble equivalente, en `test-env.sh levantar`.
   empaquetarse en `installer/posprintproxy.spec`; una que solo exista en Windows va con marcador
   `sys_platform == 'win32'` y el código MUST importar sin ella en Linux.
 
-- **Prohibido**: crear o editar módulos Odoo en este repo: los addons de soporte viven en el repo de su versión de Odoo (hoy `~/odoo19_community/ixim_addons/`, con su propio arnés); `custom_addons/` es legado en migración y no recibe código nuevo. Tampoco se tocan `.venv/`, `harness/.sandbox/` ni artefactos de build.
+- **Prohibido**: crear o editar módulos Odoo en este repo: los addons de soporte viven en el repo de su versión de Odoo (con su propio arnés); `custom_addons/` es legado en migración y no recibe código nuevo. Tampoco se tocan `.venv/`, `harness/.sandbox/` ni artefactos de build.
 
 ## Flujo de Desarrollo y Puertas de Calidad
 
 ### Modelo de ramas
 
-- Las ramas de integración son las líneas por versión de Odoo (`odoo_v19`, luego `odoo_v20`...) y
-  MUST estar siempre en estado instalable/desplegable.
+- Hay **una** rama de integración, `main`, que soporta a la vez todas las versiones de Odoo
+  vigentes y MUST estar siempre en estado instalable/desplegable. Los releases salen de `main`
+  con tags `vX.Y.Z` y un único canal de auto-update.
 - Toda feature MUST desarrollarse en la rama `<NNN>-<slug>` que crea `create-new-feature.sh`.
   El identificador `NNN` ata rama, `specs/NNN-slug/`, `backlog/NNN-slug.md` y la entrada de
   `feature_list.json`: cuatro artefactos, un solo nombre.
@@ -110,8 +138,9 @@ Cada módulo atraviesa estas puertas en orden. Ninguna se omite.
 - **Merge**: con `--no-ff` para conservar el módulo como una unidad identificable en el
   historial.
 - **Push**: MUST NOT hacerse con puertas pendientes.
-- **Commits**: define aquí tu convención de mensajes y si se incluye o no atribución de
-  coautoría asistida.
+- **Commits**: Conventional Commits en español (`feat:`, `fix:`, `docs:`, `chore:`,
+  `refactor:`, `test:`), asunto corto en imperativo y cuerpo con el porqué. Los commits MUST NOT
+  incluir líneas de coautoría de asistentes de IA (`Co-Authored-By` de modelos).
 
 **Revisión**: todo merge a la rama de integración verifica explícitamente el cumplimiento de
 los principios de este documento. Una desviación se acepta solo si queda documentada la
@@ -143,4 +172,4 @@ implementador, tester), la máquina de estados de `feature_list.json`, los dos g
 los dos flujos (light y estándar) que comparten esa máquina.
 Es subordinado a este documento: ante conflicto, gana la constitución.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-09-23
+**Version**: 2.0.0 | **Ratified**: 2026-09-23 | **Last Amended**: 2026-09-24

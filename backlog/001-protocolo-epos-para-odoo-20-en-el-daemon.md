@@ -91,7 +91,7 @@ servicio ePOS) quedan inutilizables.
 
 ## Referencias
 
-- Plan aprobado: `~/.claude/plans/continuando-con-lo-que-goofy-cat.md`.
+- Plan aprobado: `docs/plan-multiversion-odoo20.md`.
 - Código de Odoo 20: `~/odoo20/src/addons/point_of_sale/static/src/app/utils/printer/epson_printer.js`,
   `.../app/utils/init_lna.js`, `.../backend/test_epos/test_epos.js`, `.../models/pos_printer.py`.
 - Reutilizar:

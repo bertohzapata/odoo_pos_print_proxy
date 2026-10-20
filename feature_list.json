@@ -1,7 +1,7 @@
 {
   "_comentario": "Fuente canonica del backlog y del estado del ciclo. NO se edita a mano: toda mutacion pasa por harness/scripts/estado.sh. Ver AGENTS.md.",
   "schema": 1,
-  "feature_activa": null,
+  "feature_activa": "001",
   "features": [
     {
       "id": "001",
@@ -9,18 +9,18 @@
       "tipo": "actualizacion",
       "flujo": "estandar",
       "modulo": "daemon",
-      "estado": "backlog",
+      "estado": "speccing",
       "prioridad": 1,
       "depende_de": [],
       "brief": "backlog/001-protocolo-epos-para-odoo-20-en-el-daemon.md",
-      "spec_dir": null,
-      "rama": null,
+      "spec_dir": "specs/001-protocolo-epos-para-odoo-20-en-el-daemon",
+      "rama": "001-protocolo-epos-para-odoo-20-en-el-daemon",
       "tarea_actual": null,
       "bloqueo": null,
       "notas": "F1 del plan multi-versión. Constitución v2.0.0 (Principio III). Addon de cocina offline para Odoo 20 queda en F2, en el repo de Odoo 20.",
       "validaciones": [],
       "creada": "2026-09-25T05:17:39Z",
-      "actualizada": "2026-09-25T05:17:39Z"
+      "actualizada": "2026-09-25T06:24:16Z"
     },
     {
       "id": "002",

@@ -64,7 +64,7 @@ el POS. Los errores de configuración se descubren en la tienda, con clientes es
 
 ## Referencias
 
-- Plan aprobado: `~/.claude/plans/continuando-con-lo-que-goofy-cat.md`.
+- Plan aprobado: `docs/plan-multiversion-odoo20.md`.
 - Reutilizar:
   - `probe_network_printer` (`printer_backend.py:202`);
   - `list_printers` (`:134`);
